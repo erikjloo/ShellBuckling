@@ -63,10 +63,6 @@ WeakPeriodicBCModel::WeakPeriodicBCModel
   Properties myProps = props.getProps(myName_);
   Properties myConf = conf.makeProps(myName_);
 
-  // ElemGroup
-  //const String context = getContext();
-  //egroup_ = ElemGroup::get( myConf, myProps, globdat, context );
-
   // NodeSet and rank
   nodes_ = XNodeSet::find(globdat);
   rank_ = nodes_.rank();
@@ -130,9 +126,6 @@ WeakPeriodicBCModel::WeakPeriodicBCModel
     active_.resize(rank_);
     active_ = true;
   }
-
-  System::warn() << "==============================================\n";
-  System::warn() << "active_ = " << active_ << "\n";
 
   time_ = 0.;
   stepSize_ = 1.;
@@ -222,6 +215,8 @@ void WeakPeriodicBCModel::init_(const Properties &globdat)
   // Get dofs and cons
   dofs_ = XDofSpace::get(nodes_.getData(), globdat);
   cons_ = Constraints::get(dofs_, globdat);
+
+  // Add displacement dof types
   U_doftypes_.resize(rank_);
   U_doftypes_[0] = dofs_->addType("dx");
   U_doftypes_[1] = dofs_->addType("dy");
@@ -229,20 +224,23 @@ void WeakPeriodicBCModel::init_(const Properties &globdat)
     U_doftypes_[2] = dofs_->addType("dz");
   dx_.resize(rank_);
 
-  // get nodes on boundaries
+  // Add traction dof types
+
+
+  // Get boundary nodes
   for (idx_t i = 0; i < 2 * rank_; ++i)
   {
     NodeGroup edge = NodeGroup::get(PBCGroupInputModule::EDGES[i], nodes_, globdat, getContext());
     bndNodes_[i].ref(edge.getIndices());
   }
-  sortBndNodes_();
   System::warn() << "===========================================\n";
-  System::warn() << " bndNodes = [xmin, xmax, ymin, ymax] = \n"
-                 << bndNodes_ << "\n";
-  // get specimen dimensions
-  // NB: assuming rectangular or hexahedral orientation
-  //     this assumption is not checked in the code!
+  System::warn() << " bndNodes = [xmin, xmax, ymin, ymax] = \n";
+  sortBndNodes_();
 
+  // Create traction mesh
+  createTractionMesh_();
+
+  // Get specimen dimensions
   Matrix coords(nodes_.toMatrix());
   Vector box(rank_ * 2);
   for (idx_t ix = 0; ix < rank_; ++ix)
@@ -252,8 +250,7 @@ void WeakPeriodicBCModel::init_(const Properties &globdat)
     dx_[ix] = box[ix * 2 + 1] - box[ix * 2];
   }
 
-  // get corner nodes
-
+  // Get corner nodes
   ifixed_ = NodeGroup::get(PBCGroupInputModule::CORNERS[0], nodes_, globdat, getContext()).getIndices()[0];
   System::warn() << "===========================================\n";
   System::warn() << "ifixed = Corner0 = " << ifixed_ << "\n";
@@ -305,7 +302,6 @@ void WeakPeriodicBCModel::checkCommit_(const Properties &params,
 void WeakPeriodicBCModel::fixCorner_() const
 {
   // apply zero displacement on first corner
-
   for (idx_t i = 0; i < rank_; ++i)
   {
     idx_t idof = dofs_->getDofIndex(ifixed_, U_doftypes_[i]);
@@ -320,7 +316,6 @@ void WeakPeriodicBCModel::fixCorner_() const
 void WeakPeriodicBCModel::applyStrain_(const Vector &strain) const
 {
   // prescribe displacement on the master corner nodes
-
   Matrix eps(rank_, rank_);
   voigtUtilities::voigt2TensorStrain(eps, strain);
 
@@ -509,13 +504,59 @@ void WeakPeriodicBCModel::sortBndFace_(IdxVector &bndFace, const idx_t &index)
 }
 
 //-----------------------------------------------------------------------
-//   defineUmesh_
+//   createTractionMesh_
 //-----------------------------------------------------------------------
 
+void WeakPeriodicBCModel::createTractionMesh_()
+{
+  System::warn() << "===========================================\n";
+  System::warn() << "Creating traction mesh !!\n";
 
-//-----------------------------------------------------------------------
-//   defineTmesh_
-//-----------------------------------------------------------------------
+  IdxVector trFace;
+  // loop over face pairs
+  // Recall: bndNodes_ = [ xmin, xmax, ymin, ymax, zmin, zmax ]
+  for (idx_t face = 0; face < rank_; ++face)
+  {
+    IdxVector bndFace_min(bndNodes_[face * 2]);
+    IdxVector bndFace_max(bndNodes_[face * 2 + 1]);
+    trFace.resize(bndFace_min.size() + bndFace_max.size());
+
+    // loop over node indices in bndFace_min
+    idx_t jnod = 0;
+    Vector coords(rank_);
+    for (idx_t inod = 0; inod < bndFace_min.size(); ++inod)
+    {
+      nodes_.getNodeCoords(coords, bndFace_min[inod]);
+      trFace[jnod++] = nodes_.addNode(coords);
+    }
+
+    // loop over node indices in bndFace_max
+    for (idx_t inod = 0; inod < bndFace_max.size(); ++inod)
+    {
+      nodes_.getNodeCoords(coords, bndFace_max[inod]);
+      trFace[jnod++] = nodes_.addNode(coords);
+    }
+
+    // Sorting trFace
+    idx_t index = ((face == 0) ? 1 : 0);
+    sortBndFace_(trFace, index);
+    // Print to verify
+    // trNodes_[face] = trFace.clone();
+    System::warn() << "trNodes_[" << face << "] = " << trFace << "\n";
+  }
+
+  System::warn() << "===========================================\n";
+  System::warn() << "Adding dofs to traction mesh !!\n";
+  // Add dofs to traction mesh
+  for (idx_t face = 0; face < rank_; ++face)
+  {
+    IdxVector trFace(trNodes_[face]);
+    for (idx_t inod = 0; inod < trFace.size(); ++inod)
+    {
+      dofs_->addDofs(trFace[inod], T_doftypes_);
+    }
+  }
+}
 
 //=======================================================================
 //   related functions

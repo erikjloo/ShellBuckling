@@ -61,7 +61,6 @@ public: // public members:
   static const char *STRAINPATH_PROP;
   static const char *MAXTIME_PROP;
   static const char *ACTIVE_PROP;
-  static const char *DUPEDNODES_PROP;
 
   enum StrainType
   {
@@ -139,7 +138,6 @@ private: // Private Members (internal use)
   StrainType strainType_;
   FuncVector strainFunc_;
 
-  String dupedNodeGroup_;
 };
 
 #endif
