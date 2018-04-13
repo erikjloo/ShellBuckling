@@ -122,7 +122,7 @@ private: // Private Members (internal use)
   int localrank_; // local rank of boundary element
 
   IdxVector bndNodes_[6];   // boundary nodes [ xmin, xmax, ymin, ymax, zmin, zmax ]
-  IdxVector trNodes_[3];    // boundary nodes of traction mesh
+  IdxVector trNodes_[3];    // boundary nodes of traction mesh [ xmin, ymin ]
   Tuple<idx_t, 3> masters_; // master corner nodes [ cornerX, cornerY, cornerZ ]
   idx_t ifixed_;            // master corner node [ corner0 ]
 

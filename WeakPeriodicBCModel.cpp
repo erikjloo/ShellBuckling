@@ -238,6 +238,8 @@ void WeakPeriodicBCModel::init_(const Properties &globdat)
   sortBndNodes_();
 
   // Create traction mesh
+  System::warn() << "===========================================\n";
+  System::warn() << " trNodes = [xmin, ymin] = \n";
   createTractionMesh_();
 
   // Get specimen dimensions
@@ -249,6 +251,8 @@ void WeakPeriodicBCModel::init_(const Properties &globdat)
     box[ix * 2 + 1] = coords(ix, bndNodes_[ix * 2 + 1][0]);
     dx_[ix] = box[ix * 2 + 1] - box[ix * 2];
   }
+  System::warn() << "===========================================\n";
+  System::warn() << "Box dimensions = " << box << "\n";
 
   // Get corner nodes
   ifixed_ = NodeGroup::get(PBCGroupInputModule::CORNERS[0], nodes_, globdat, getContext()).getIndices()[0];
@@ -256,9 +260,7 @@ void WeakPeriodicBCModel::init_(const Properties &globdat)
   System::warn() << "ifixed = Corner0 = " << ifixed_ << "\n";
 
   for (idx_t i = 0; i < rank_; ++i)
-  {
     masters_[i] = NodeGroup::get(PBCGroupInputModule::CORNERS[i + 1], nodes_, globdat, getContext()).getIndices()[0];
-  }
 
   System::warn() << "===========================================\n";
   System::warn() << "Masters = [CornerX, CornerY] = " << masters_ << "\n";
@@ -355,10 +357,6 @@ void WeakPeriodicBCModel::setPeriodicCons_() const
     {
       IdxVector inodes(bndNodes_[ix * 2]);
       IdxVector jnodes(bndNodes_[ix * 2 + 1]);
-
-      System::warn() << "===========================================\n";
-      System::warn() << "inodes = " << inodes << "\n";
-      System::warn() << "jnodes = " << jnodes << "\n";
 
       // loop over nodes of edges
 
@@ -509,9 +507,6 @@ void WeakPeriodicBCModel::sortBndFace_(IdxVector &bndFace, const idx_t &index)
 
 void WeakPeriodicBCModel::createTractionMesh_()
 {
-  System::warn() << "===========================================\n";
-  System::warn() << "Creating traction mesh !!\n";
-
   IdxVector trFace;
   // loop over face pairs
   // Recall: bndNodes_ = [ xmin, xmax, ymin, ymax, zmin, zmax ]
@@ -554,6 +549,74 @@ void WeakPeriodicBCModel::createTractionMesh_()
     for (idx_t inod = 0; inod < trFace.size(); ++inod)
     {
       dofs_->addDofs(trFace[inod], T_doftypes_);
+    }
+  }
+}
+
+//-----------------------------------------------------------------------
+//   augmentMatrix_
+//-----------------------------------------------------------------------
+
+//-----------------------------------------------------------------------
+//   augmentMatrix_
+//-----------------------------------------------------------------------
+
+void WeakPeriodicBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
+                                         const Vector &force,
+                                         const Vector &disp)
+{
+
+  System::warn() << "Augmenting Matrix !!\n";
+
+  // Variables related to both U mesh and T mesh:
+  IdxVector connect(nnod_);    // node indices; connect = [ node1 node2 ]
+  Matrix coords(rank_, nnod_); // node coordinates; coords  = [ x[1] x[2] ], x = [x y z]'
+
+  // Variables related to element on U mesh:
+  IdxVector idofs(nnod_ * rank_); // Dof indices related to U
+  Vector w(nIP_);                 // Integration weights [ jw[1] jw[2] ], jw[ip] =j[ip]*w[ip]
+  Matrix N(nnod_, nIP_);          //  shape functions of U mesh: N = [ n[1] n[2] ], n[ip] = [n1 n2]'
+  Matrix X(rank_, nIP_);          // global coordinates of IP; X = [ x[1] x[2] ], x[i] = [x y z]'
+
+  // Variables related to element on T mesh:
+  IdxVector jdofs(nnod_ * rank_); // Dof indices related to T
+  Vector u(localrank_);           // local coordinates of given X[ip]; u = xi
+  Matrix H(nnod_, nIP_);          // shape functions of T; H = [ h[1] h[2] ], h = [h1 h2]'
+  // loop over faces of bndNodes_ (faces)
+  for (idx_t face = 0; face < 2 * rank_; ++face)
+  {
+    IdxVector bndFace(bndNodes_[face]);
+
+    // loop over nodes indices in bndFace
+    for (idx_t in = 0; in < bndFace.size() - 1; ++in)
+    {
+      connect[0] = bndFace[in];
+      connect[1] = bndFace[in + 1];
+
+      dofs_->getDofIndices(idofs, connect, U_doftypes_);
+
+      nodes_.getSomeCoords(coords, connect);
+
+      bshape_->getIntegrationWeights(w, coords);
+
+      N = bshape_->getShapeFunctions();
+
+      bshape_->getGlobalIntegrationPoints(X, coords);
+
+      // getTractionMeshNodes_(connect, X);
+
+      connect[0] = 3;
+      connect[1] = 4;
+
+      dofs_->getDofIndices(jdofs, connect, T_doftypes_);
+
+      nodes_.getSomeCoords(coords, connect);
+
+      for (idx_t ip = 0; ip < nIP_; ip++)
+      {
+        bshape_->getLocalPoint(u, X[ip], 0.1, coords);
+        bshape_->evalShapeFunctions(H[ip], u);
+      }
     }
   }
 }
