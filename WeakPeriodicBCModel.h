@@ -105,7 +105,7 @@ private: // Private Methods (internal use)
                       const Vector &disp);
   void getTractionMeshNodes_(IdxVector &connect, 
                               const Vector &x,
-                              const idx_t &row);
+                              const idx_t &face);
 
 private: // Private Members (internal use)
   Assignable<XNodeSet> nodes_;
@@ -121,8 +121,8 @@ private: // Private Members (internal use)
   int nnod_; // number of nodes of boundary element
   int localrank_; // local rank of boundary element
 
-  IdxVector bndNodes_[6];   // boundary nodes [ xmin, xmax, ymin, ymax, zmin, zmax ]
-  IdxVector trNodes_[3];    // boundary nodes of traction mesh [ xmin, ymin ]
+  IdxVector bndNodes_[6];   // array of boundary nodes [ xmin, xmax, ymin, ymax, zmin, zmax ]
+  IdxVector trNodes_[3];    // array of boundary nodes of traction mesh [ xmin, ymin, zmin]
   Tuple<idx_t, 3> masters_; // master corner nodes [ cornerX, cornerY, cornerZ ]
   idx_t ifixed_;            // master corner node [ corner0 ]
 

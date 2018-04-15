@@ -27,7 +27,7 @@
 #include "voigtUtilities.h"
 #include "PBCGroupInputModule.h"
 
-using jem::Error;
+    using jem::Error;
 using jem::io::endl;
 using jem::numeric::UserFunc;
 using jive::fem::NodeGroup;
@@ -222,45 +222,45 @@ void WeakPeriodicBCModel::init_(const Properties &globdat)
   U_doftypes_[1] = dofs_->addType("dy");
   if (rank_ > 2)
     U_doftypes_[2] = dofs_->addType("dz");
-  dx_.resize(rank_);
 
   // Add traction dof types
 
-
   // Get boundary nodes
-  for (idx_t i = 0; i < 2 * rank_; ++i)
+  for (idx_t face = 0; face < 2 * rank_; ++face)
   {
-    NodeGroup edge = NodeGroup::get(PBCGroupInputModule::EDGES[i], nodes_, globdat, getContext());
-    bndNodes_[i].ref(edge.getIndices());
+    NodeGroup edge = NodeGroup::get(PBCGroupInputModule::EDGES[face], nodes_, globdat, getContext());
+    bndNodes_[face].ref(edge.getIndices());
   }
-  System::warn() << "===========================================\n";
+  System::warn() << "================================================\n";
   System::warn() << " bndNodes = [xmin, xmax, ymin, ymax] = \n";
   sortBndNodes_();
 
   // Create traction mesh
-  System::warn() << "===========================================\n";
+  System::warn() << "================================================\n";
   System::warn() << " trNodes = [xmin, ymin] = \n";
   createTractionMesh_();
 
   // Get specimen dimensions
+  dx_.resize(rank_);
   Matrix coords(nodes_.toMatrix());
   Vector box(rank_ * 2);
+  // loop over face pairs (ix)
   for (idx_t ix = 0; ix < rank_; ++ix)
   {
     box[ix * 2] = coords(ix, bndNodes_[ix * 2][0]);
     box[ix * 2 + 1] = coords(ix, bndNodes_[ix * 2 + 1][0]);
     dx_[ix] = box[ix * 2 + 1] - box[ix * 2];
   }
-  System::warn() << "===========================================\n";
+  System::warn() << "================================================\n";
   System::warn() << "Box dimensions = " << box << "\n";
 
   // Get corner nodes
   ifixed_ = NodeGroup::get(PBCGroupInputModule::CORNERS[0], nodes_, globdat, getContext()).getIndices()[0];
-  System::warn() << "===========================================\n";
+  System::warn() << "================================================\n";
   System::warn() << "ifixed = Corner0 = " << ifixed_ << "\n";
-
-  for (idx_t i = 0; i < rank_; ++i)
-    masters_[i] = NodeGroup::get(PBCGroupInputModule::CORNERS[i + 1], nodes_, globdat, getContext()).getIndices()[0];
+  // loop over face pairs (ix)
+  for (idx_t ix = 0; ix < rank_; ++ix)
+    masters_[ix] = NodeGroup::get(PBCGroupInputModule::CORNERS[ix + 1], nodes_, globdat, getContext()).getIndices()[0];
 
   System::warn() << "===========================================\n";
   System::warn() << "Masters = [CornerX, CornerY] = " << masters_ << "\n";
@@ -347,40 +347,32 @@ void WeakPeriodicBCModel::setPeriodicCons_() const
 
   IdxVector idofs(2);
   Vector coefs(2);
-
   coefs = 1.;
 
-  // loop over faces
+  // loop over face pairs (ix)
   for (idx_t ix = 0; ix < rank_; ix++)
   {
     if (active_[ix])
     {
-      IdxVector inodes(bndNodes_[ix * 2]);
-      IdxVector jnodes(bndNodes_[ix * 2 + 1]);
+      IdxVector inodes(bndNodes_[ix * 2]);     // bndFace_min (Gamma+)
+      IdxVector jnodes(bndNodes_[ix * 2 + 1]); // bndFace_max
 
-      // loop over nodes of edges
-
+      // Loop over nodes indices of inodes (bndFace_min)
       for (idx_t in = 0; in < inodes.size(); in++)
       {
         if (jnodes[in] != masters_[ix])
         {
-          // System::out() << "constraining node " << jnodes[in] <<
-          // " to  " << inodes[in] << " and " << masters_[ix] << endl;
-
-          // loop over dof types
-
+          // Loop over dof types
           for (idx_t jx = 0; jx < rank_; ++jx)
           {
-            // master dofs: opposite node and relevant corner node
-
+            // Master dofs: opposite node and relevant corner node
             idofs[0] = dofs_->getDofIndex(inodes[in], U_doftypes_[jx]);
             idofs[1] = dofs_->getDofIndex(masters_[ix], U_doftypes_[jx]);
 
-            // dofs of dependent (slave) node jd
-
+            // Dofs of dependent (slave) node jd
             idx_t jdof = dofs_->getDofIndex(jnodes[in], U_doftypes_[jx]);
 
-            // add constraint
+            // Add constraint jdof = idof[0]*coef[0] + idof[1]*coef[1]
             cons_->addConstraint(jdof, idofs, coefs);
           }
         }
@@ -459,14 +451,14 @@ Array<Ref<Function>, 1> WeakPeriodicBCModel::getStrainFuncs_
 void WeakPeriodicBCModel::sortBndNodes_()
 {
   idx_t index;
-  // loop over faces of bndNodes_ (faces)
+  // Loop over faces of bndNodes_
   for (idx_t face = 0; face < 2 * rank_; ++face)
   {
     if ((face == 0) || (face == 1))
       index = 1; // Index to compare y coordinates
     if ((face == 2) || (face == 3))
       index = 0; // Index to compare x coordinates
-    // Perform bubble sort on bndNodes_[i]
+    // Perform bubble sort on bndNodes_[face]
     sortBndFace_(bndNodes_[face], index);
     // Print to verify
     System::warn() << " bndNodes_[" << face << "] = " << bndNodes_[face] << '\n';
@@ -484,18 +476,18 @@ void WeakPeriodicBCModel::sortBndFace_(IdxVector &bndFace, const idx_t &index)
   Vector c0(3);
 
   // BubbleSort algorithm
-  for (idx_t i = 0; i < bndFace.size(); ++i)
+  for (idx_t in = 0; in < bndFace.size(); ++in)
   {
-    for (idx_t j = 0; j < bndFace.size() - 1 - i; ++j)
+    for (idx_t jn = 0; jn < bndFace.size() - 1 - in; ++jn)
     {
-      nodes_.getNodeCoords(c1, bndFace[j + 1]); // c1 = [x1, y1, z1]
-      nodes_.getNodeCoords(c0, bndFace[j]);     // c0 = [x0, y0, z0]
+      nodes_.getNodeCoords(c1, bndFace[jn + 1]); // c1 = [x1, y1, z1]
+      nodes_.getNodeCoords(c0, bndFace[jn]);     // c0 = [x0, y0, z0]
       if (c0[index] > c1[index])
       {
         // Swap indices without creating a new temp variable
-        bndFace[j + 1] = bndFace[j] + bndFace[j + 1]; // b = a+b
-        bndFace[j] = bndFace[j + 1] - bndFace[j];     // a = (a+b)-a = b
-        bndFace[j + 1] = bndFace[j + 1] - bndFace[j]; // b = (a+b)-b = a
+        bndFace[jn + 1] = bndFace[jn] + bndFace[jn + 1]; // b = a+b
+        bndFace[jn] = bndFace[jn + 1] - bndFace[jn];     // a = (a+b)-a = b
+        bndFace[jn + 1] = bndFace[jn + 1] - bndFace[jn]; // b = (a+b)-b = a
       }
     }
   }
@@ -508,54 +500,117 @@ void WeakPeriodicBCModel::sortBndFace_(IdxVector &bndFace, const idx_t &index)
 void WeakPeriodicBCModel::createTractionMesh_()
 {
   IdxVector trFace;
-  // loop over face pairs
-  // Recall: bndNodes_ = [ xmin, xmax, ymin, ymax, zmin, zmax ]
-  for (idx_t face = 0; face < rank_; ++face)
+
+  // Loop over face pairs (ix)
+  for (idx_t ix = 0; ix < rank_; ix++)
   {
-    IdxVector bndFace_min(bndNodes_[face * 2]);
-    IdxVector bndFace_max(bndNodes_[face * 2 + 1]);
-    trFace.resize(bndFace_min.size() + bndFace_max.size());
+    IdxVector inodes(bndNodes_[ix * 2]);     // bndFace_min (Gamma+)
+    IdxVector jnodes(bndNodes_[ix * 2 + 1]); // bndFace_max
+    trFace.resize(inodes.size() + jnodes.size());
 
-    // loop over node indices in bndFace_min
-    idx_t jnod = 0;
+    // Loop over node indices in inodes
+    idx_t jn = 0;
     Vector coords(rank_);
-    for (idx_t inod = 0; inod < bndFace_min.size(); ++inod)
+    for (idx_t in = 0; in < inodes.size(); ++in)
     {
-      nodes_.getNodeCoords(coords, bndFace_min[inod]);
-      trFace[jnod++] = nodes_.addNode(coords);
+      nodes_.getNodeCoords(coords, inodes[in]);
+      trFace[jn++] = nodes_.addNode(coords);
     }
 
-    // loop over node indices in bndFace_max
-    for (idx_t inod = 0; inod < bndFace_max.size(); ++inod)
+    // Loop over node indices in jnodes
+    for (idx_t in = 0; in < jnodes.size(); ++in)
     {
-      nodes_.getNodeCoords(coords, bndFace_max[inod]);
-      trFace[jnod++] = nodes_.addNode(coords);
+      nodes_.getNodeCoords(coords, jnodes[in]);
+      trFace[jn++] = nodes_.addNode(coords);
     }
 
-    // Sorting trFace
-    idx_t index = ((face == 0) ? 1 : 0);
+    // Sorting trFace (works only for 2D)
+    idx_t index = ((ix == 0) ? 1 : 0);
     sortBndFace_(trFace, index);
+
+    // Assign trFace to trNodes_[ix]
+    trNodes_[ix].ref(trFace.clone());
+
     // Print to verify
-    // trNodes_[face] = trFace.clone();
-    System::warn() << "trNodes_[" << face << "] = " << trFace << "\n";
+    System::warn() << "trNodes_[" << ix << "] = " << trNodes_[ix] << "\n";
   }
 
-  System::warn() << "===========================================\n";
-  System::warn() << "Adding dofs to traction mesh !!\n";
   // Add dofs to traction mesh
-  for (idx_t face = 0; face < rank_; ++face)
+  for (idx_t ix = 0; ix < rank_; ++ix)
   {
-    IdxVector trFace(trNodes_[face]);
-    for (idx_t inod = 0; inod < trFace.size(); ++inod)
+    IdxVector trFace(trNodes_[ix]);
+    for (idx_t in = 0; in < trFace.size(); ++in)
     {
-      dofs_->addDofs(trFace[inod], T_doftypes_);
+      dofs_->addDofs(trFace[in], T_doftypes_);
     }
   }
 }
 
 //-----------------------------------------------------------------------
-//   augmentMatrix_
+//   getTractionMeshNodes_
 //-----------------------------------------------------------------------
+
+void WeakPeriodicBCModel::getTractionMeshNodes_(IdxVector &connect,
+                                                const Vector &x,
+                                                const idx_t &face)
+{
+  Matrix coords(rank_, nnod_);
+
+  // Map face index onto ix index
+  int ix = floor(face / 2);
+
+  // Implementation for two dimensions
+  if (rank_ == 2)
+  {
+    // Assign trNodes_[ix] to trFace
+    IdxVector trFace(trNodes_[ix]);
+
+    // Loop over node indices in trFace
+    for (idx_t in = 0; in < trFace.size(); ++in)
+    {
+      // get coords of nodes in trFace[in:in+1]
+      connect[0] = trFace[in];
+      connect[1] = trFace[in + 1];
+      nodes_.getSomeCoords(coords, connect);
+
+      if (ix == 0)
+      {
+        if ((coords(1, 0) < x[1]) && (x[1] < coords(1, 1)))
+          System::warn() << coords(1, 0) << " < " << x[1] << " < " << coords(1, 1) << "\n";
+        break;
+      }
+      if (ix == 1)
+      {
+        if ((coords(0, 0) < x[0]) && (x[1] < coords(0, 1)))
+          System::warn() << coords(0, 0) << " < " << x[0] << " < " << coords(0, 1) << "\n";
+        break;
+      }
+    }
+  }
+  // Implementation for three dimensions
+  // if (rank_ == 3)
+  // IdxVector trFace(trElems_[ix]);
+  //
+  // Loop over elements in trFace
+  // for (idx_t ie = 0; ie < trFace.size(); ++ie)
+  // {
+  //    elems_.getNodeIndices(connect, ie);
+  //    nodes_.getSomeCoords(coords, connect);
+  //
+  //    if (ix == 0)
+  //    {
+  //
+  //    }
+  //    if (ix == 1)
+  //    {
+  //
+  //    }
+  //    if (ix == 2)
+  //    {
+  //
+  //    }
+  // }
+}
 
 //-----------------------------------------------------------------------
 //   augmentMatrix_
@@ -565,7 +620,7 @@ void WeakPeriodicBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
                                          const Vector &force,
                                          const Vector &disp)
 {
-
+  System::warn() << "===========================================\n";
   System::warn() << "Augmenting Matrix !!\n";
 
   // Variables related to both U mesh and T mesh:
@@ -582,41 +637,37 @@ void WeakPeriodicBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
   IdxVector jdofs(nnod_ * rank_); // Dof indices related to T
   Vector u(localrank_);           // local coordinates of given X[ip]; u = xi
   Matrix H(nnod_, nIP_);          // shape functions of T; H = [ h[1] h[2] ], h = [h1 h2]'
-  // loop over faces of bndNodes_ (faces)
+
+  // Loop over faces of bndNodes_
   for (idx_t face = 0; face < 2 * rank_; ++face)
   {
+    // Assign bndNodes_[face] to bndFace
     IdxVector bndFace(bndNodes_[face]);
 
-    // loop over nodes indices in bndFace
+    // Loop over nodes indices in bndFace
     for (idx_t in = 0; in < bndFace.size() - 1; ++in)
     {
       connect[0] = bndFace[in];
       connect[1] = bndFace[in + 1];
 
+      // Get idofs, w and N from displacement mesh
       dofs_->getDofIndices(idofs, connect, U_doftypes_);
-
       nodes_.getSomeCoords(coords, connect);
-
       bshape_->getIntegrationWeights(w, coords);
-
       N = bshape_->getShapeFunctions();
-
       bshape_->getGlobalIntegrationPoints(X, coords);
 
-      // getTractionMeshNodes_(connect, X);
-
-      connect[0] = 3;
-      connect[1] = 4;
-
+      // Get jdofs and H from T mesh
+      getTractionMeshNodes_(connect, X[0], face);
       dofs_->getDofIndices(jdofs, connect, T_doftypes_);
-
       nodes_.getSomeCoords(coords, connect);
-
       for (idx_t ip = 0; ip < nIP_; ip++)
       {
         bshape_->getLocalPoint(u, X[ip], 0.1, coords);
         bshape_->evalShapeFunctions(H[ip], u);
       }
+
+      // Assemble Ke
     }
   }
 }
