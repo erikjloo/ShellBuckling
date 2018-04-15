@@ -450,14 +450,13 @@ Array<Ref<Function>, 1> WeakPeriodicBCModel::getStrainFuncs_
 
 void WeakPeriodicBCModel::sortBndNodes_()
 {
-  idx_t index;
   // Loop over faces of bndNodes_
   for (idx_t face = 0; face < 2 * rank_; ++face)
   {
-    if ((face == 0) || (face == 1))
-      index = 1; // Index to compare y coordinates
-    if ((face == 2) || (face == 3))
-      index = 0; // Index to compare x coordinates
+    // ix = 0 for xmin & xmax, 1 for ymin and ymax
+    int ix = floor(face / 2);
+    // index = 1 if ix = 0, else index = 0
+    idx_t index = ((ix == 0)? 1 : 0);
     // Perform bubble sort on bndNodes_[face]
     sortBndFace_(bndNodes_[face], index);
     // Print to verify
@@ -557,7 +556,7 @@ void WeakPeriodicBCModel::getTractionMeshNodes_(IdxVector &connect,
   Matrix coords(rank_, nnod_);
 
   // Map face index onto ix index
-  int ix = floor(face / 2);
+  int ix = floor(face / 2); 
 
   // Implementation for two dimensions
   if (rank_ == 2)
