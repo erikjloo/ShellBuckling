@@ -225,6 +225,7 @@ void WeakPeriodicBCModel::init_(const Properties &globdat)
 
   // Add traction dof types
 
+
   // Get boundary nodes
   for (idx_t face = 0; face < 2 * rank_; ++face)
   {
@@ -234,11 +235,6 @@ void WeakPeriodicBCModel::init_(const Properties &globdat)
   System::warn() << "================================================\n";
   System::warn() << " bndNodes = [xmin, xmax, ymin, ymax] = \n";
   sortBndNodes_();
-
-  // Create traction mesh
-  System::warn() << "================================================\n";
-  System::warn() << " trNodes = [xmin, ymin] = \n";
-  createTractionMesh_();
 
   // Get specimen dimensions
   dx_.resize(rank_);
@@ -253,6 +249,7 @@ void WeakPeriodicBCModel::init_(const Properties &globdat)
   }
   System::warn() << "================================================\n";
   System::warn() << "Box dimensions = " << box << "\n";
+  System::warn() << "dx_ = " << dx_ << "\n";
 
   // Get corner nodes
   ifixed_ = NodeGroup::get(PBCGroupInputModule::CORNERS[0], nodes_, globdat, getContext()).getIndices()[0];
@@ -264,6 +261,12 @@ void WeakPeriodicBCModel::init_(const Properties &globdat)
 
   System::warn() << "===========================================\n";
   System::warn() << "Masters = [CornerX, CornerY] = " << masters_ << "\n";
+
+  // Create traction mesh
+  System::warn() << "================================================\n";
+  System::warn() << " trNodes = [xmin, ymin] = \n";
+  createTractionMesh_();
+
 }
 
 //-----------------------------------------------------------------------
@@ -454,7 +457,7 @@ void WeakPeriodicBCModel::sortBndNodes_()
   for (idx_t face = 0; face < 2 * rank_; ++face)
   {
     // ix = 0 for xmin & xmax, 1 for ymin and ymax
-    int ix = floor(face / 2);
+    int ix = face / 2;
     // index = 1 if ix = 0, else index = 0
     idx_t index = ((ix == 0)? 1 : 0);
     // Perform bubble sort on bndNodes_[face]
@@ -498,15 +501,51 @@ void WeakPeriodicBCModel::sortBndFace_(IdxVector &bndFace, const idx_t &index)
 
 void WeakPeriodicBCModel::createTractionMesh_()
 {
+  //---------------------------------------------------------------------------
+  // Part 1: Find the smallest element dimensions along the x and y coordinates
+  //---------------------------------------------------------------------------
+
+  // Variables related to both U mesh and T mesh:
+  IdxVector connect(nnod_);    // node indices; connect = [ node1 node2 ]
+  Vector dx(rank_); // dimensions of current element
+  Vector dx0 = dx_; // smallest element dimensions
+
+  // // Loop over faces of bndNodes_
+  // for (idx_t face = 0; face < 2*rank_; ++face)
+  // {
+  //   // ix = 0 for xmin & xmax, 1 for ymin and ymax
+  //   int ix = face / 2;
+  //   // index = 1 if ix = 0, else index = 0
+  //   idx_t index = ((ix == 0) ? 1 : 0);
+  //   // Assign bndNodes_[face] to bndFace
+  //   IdxVector bndFace(bndNodes_[face]);
+
+  //   // Loop over indices of bndFace
+  //   Matrix coords(rank_, nnod_);
+  //   for (idx_t in = 0; in < bndFace.size()-1; ++in)
+  //   {
+  //     // get coords of nodes in bndFace[in:in+2]
+  //     connect[0] = bndFace[in];
+  //     connect[1] = bndFace[in + 1];
+  //     nodes_.getSomeCoords(coords, connect);
+
+  //     // Calculate dx and compare to dx0
+  //     dx[index] = coords(index, 1) - coords(index, 0);
+  //     System::warn() << "dx[" << index << "] = " << dx[index] << "\n";
+  //     dx0[index] = ((dx[index] < dx0[index]) ? dx[index] : dx0[index]);
+  //     System::warn() << "dx0[" << index << "] = " << dx0[index] << "\n";
+  //   }
+  // }
+
   IdxVector trFace;
 
-  // Loop over face pairs (ix)
-  for (idx_t ix = 0; ix < rank_; ix++)
+  // Loop over faces of trNodes_
+  for (idx_t ix = 0; ix < rank_; ++ix)
   {
     IdxVector inodes(bndNodes_[ix * 2]);     // bndFace_min (Gamma+)
     IdxVector jnodes(bndNodes_[ix * 2 + 1]); // bndFace_max
     trFace.resize(inodes.size() + jnodes.size());
-
+    
     // Loop over node indices in inodes
     idx_t jn = 0;
     Vector coords(rank_);
@@ -529,6 +568,7 @@ void WeakPeriodicBCModel::createTractionMesh_()
 
     // Assign trFace to trNodes_[ix]
     trNodes_[ix].ref(trFace.clone());
+    // Coarse mesh
 
     // Print to verify
     System::warn() << "trNodes_[" << ix << "] = " << trNodes_[ix] << "\n";
@@ -540,7 +580,7 @@ void WeakPeriodicBCModel::createTractionMesh_()
     IdxVector trFace(trNodes_[ix]);
     for (idx_t in = 0; in < trFace.size(); ++in)
     {
-      dofs_->addDofs(trFace[in], T_doftypes_);
+      //dofs_->addDofs(trFace[in], T_doftypes_);
     }
   }
 }
@@ -556,7 +596,7 @@ void WeakPeriodicBCModel::getTractionMeshNodes_(IdxVector &connect,
   Matrix coords(rank_, nnod_);
 
   // Map face index onto ix index
-  int ix = floor(face / 2); 
+  int ix = face / 2; 
 
   // Implementation for two dimensions
   if (rank_ == 2)
@@ -565,23 +605,20 @@ void WeakPeriodicBCModel::getTractionMeshNodes_(IdxVector &connect,
     IdxVector trFace(trNodes_[ix]);
 
     // Loop over node indices in trFace
-    for (idx_t in = 0; in < trFace.size(); ++in)
+    for (idx_t in = 0; in < trFace.size() - 1; ++in)
     {
-      // get coords of nodes in trFace[in:in+1]
+      // get coords of nodes in trFace[in:in+2]
       connect[0] = trFace[in];
       connect[1] = trFace[in + 1];
       nodes_.getSomeCoords(coords, connect);
 
-      if (ix == 0)
+      // index = 1 if ix == 0, else index = 0
+      idx_t index = ((ix == 0) ? 1 : 0);
+
+      // Check if c0[index] < x[index] < c1[index]
+      if ((coords(index, 0) < x[index]) && (x[index] < coords(index, 1)))
       {
-        if ((coords(1, 0) < x[1]) && (x[1] < coords(1, 1)))
-          System::warn() << coords(1, 0) << " < " << x[1] << " < " << coords(1, 1) << "\n";
-        break;
-      }
-      if (ix == 1)
-      {
-        if ((coords(0, 0) < x[0]) && (x[1] < coords(0, 1)))
-          System::warn() << coords(0, 0) << " < " << x[0] << " < " << coords(0, 1) << "\n";
+        System::warn() << coords(index, 0) << " < " << x[index] << " < " << coords(index, 1) << "\n";
         break;
       }
     }
@@ -636,6 +673,9 @@ void WeakPeriodicBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
   IdxVector jdofs(nnod_ * rank_); // Dof indices related to T
   Vector u(localrank_);           // local coordinates of given X[ip]; u = xi
   Matrix H(nnod_, nIP_);          // shape functions of T; H = [ h[1] h[2] ], h = [h1 h2]'
+  
+  // Matrix to be assembled: K[idofs,jdofs] += w[ip]*N[ip]*H[ip]
+  Matrix Ke(nnod_*rank_, nnod_*rank_);
 
   // Loop over faces of bndNodes_
   for (idx_t face = 0; face < 2 * rank_; ++face)
@@ -656,16 +696,22 @@ void WeakPeriodicBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
       N = bshape_->getShapeFunctions();
       bshape_->getGlobalIntegrationPoints(X, coords);
 
-      // Get jdofs and H from T mesh
-      getTractionMeshNodes_(connect, X[0], face);
+      // Get jdofs and H from traction mesh
+      getTractionMeshNodes_(connect, X(ALL,0), face);
       dofs_->getDofIndices(jdofs, connect, T_doftypes_);
       nodes_.getSomeCoords(coords, connect);
+      
+      Ke = 0.0;
       for (idx_t ip = 0; ip < nIP_; ip++)
       {
         bshape_->getLocalPoint(u, X[ip], 0.1, coords);
         bshape_->evalShapeFunctions(H[ip], u);
-      }
 
+        // Ke += matmul(H[ip]*N[ip])*w[ip]
+      }
+      //H[ip]*N[ip]
+      // w*H*N
+      //mbuild
       // Assemble Ke
     }
   }
