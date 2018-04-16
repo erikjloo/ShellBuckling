@@ -251,7 +251,7 @@ void WeakPeriodicBCModel::init_(const Properties &globdat)
   System::warn() << "Box dimensions = " << box << "\n";
   System::warn() << "dx_ = " << dx_ << "\n";
 
-  // Get corner nodes
+  // Find corner nodes
   ifixed_ = NodeGroup::get(PBCGroupInputModule::CORNERS[0], nodes_, globdat, getContext()).getIndices()[0];
   System::warn() << "================================================\n";
   System::warn() << "ifixed = Corner0 = " << ifixed_ << "\n";
@@ -510,32 +510,32 @@ void WeakPeriodicBCModel::createTractionMesh_()
   Vector dx(rank_); // dimensions of current element
   Vector dx0 = dx_; // smallest element dimensions
 
-  // // Loop over faces of bndNodes_
-  // for (idx_t face = 0; face < 2*rank_; ++face)
-  // {
-  //   // ix = 0 for xmin & xmax, 1 for ymin and ymax
-  //   int ix = face / 2;
-  //   // index = 1 if ix = 0, else index = 0
-  //   idx_t index = ((ix == 0) ? 1 : 0);
-  //   // Assign bndNodes_[face] to bndFace
-  //   IdxVector bndFace(bndNodes_[face]);
+  // Loop over faces of bndNodes_
+  for (idx_t face = 0; face < 2*rank_; ++face)
+  {
+    // ix = 0 for xmin & xmax, 1 for ymin and ymax
+    int ix = face / 2;
+    // index = 1 if ix = 0, else index = 0
+    idx_t index = ((ix == 0) ? 1 : 0);
+    // Assign bndNodes_[face] to bndFace
+    IdxVector bndFace(bndNodes_[face]);
 
-  //   // Loop over indices of bndFace
-  //   Matrix coords(rank_, nnod_);
-  //   for (idx_t in = 0; in < bndFace.size()-1; ++in)
-  //   {
-  //     // get coords of nodes in bndFace[in:in+2]
-  //     connect[0] = bndFace[in];
-  //     connect[1] = bndFace[in + 1];
-  //     nodes_.getSomeCoords(coords, connect);
+    // Loop over indices of bndFace
+    Matrix coords(rank_, nnod_);
+    for (idx_t in = 0; in < bndFace.size()-1; ++in)
+    {
+      // get coords of nodes in bndFace[in:in+2]
+      connect[0] = bndFace[in];
+      connect[1] = bndFace[in + 1];
+      nodes_.getSomeCoords(coords, connect);
 
-  //     // Calculate dx and compare to dx0
-  //     dx[index] = coords(index, 1) - coords(index, 0);
-  //     System::warn() << "dx[" << index << "] = " << dx[index] << "\n";
-  //     dx0[index] = ((dx[index] < dx0[index]) ? dx[index] : dx0[index]);
-  //     System::warn() << "dx0[" << index << "] = " << dx0[index] << "\n";
-  //   }
-  // }
+      // Calculate dx and compare to dx0
+      dx[index] = coords(index, 1) - coords(index, 0);
+      System::warn() << "dx[" << index << "] = " << dx[index] << "\n";
+      dx0[index] = ((dx[index] < dx0[index]) ? dx[index] : dx0[index]);
+      System::warn() << "dx0[" << index << "] = " << dx0[index] << "\n";
+    }
+  }
 
   IdxVector trFace;
 
