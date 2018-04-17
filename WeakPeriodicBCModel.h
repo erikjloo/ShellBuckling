@@ -133,6 +133,7 @@ private: // Private Members (internal use)
   double stepSize_;
   double maxTime_;
 
+  Vector box_;   // specimen coordinates
   Vector dx_;    // specimen dimensions
   Vector dx0_;   // smallest element dimensions
   double factor; // coarsening factor
