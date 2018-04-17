@@ -100,30 +100,31 @@ private: // Private Methods (internal use)
   void sortBndNodes_();
   void sortBndFace_(IdxVector &bndFace, const idx_t &index);
   void createTractionMesh_();
+  void coarsenMesh_(IdxVector &trFace, const idx_t &index);
   void augmentMatrix_(Ref<MatrixBuilder> mbuilder,
                       const Vector &force,
                       const Vector &disp);
-  void getTractionMeshNodes_(IdxVector &connect, 
-                              const Vector &x,
-                              const idx_t &face);
+  void getTractionMeshNodes_(IdxVector &connect,
+                             const Vector &x,
+                             const idx_t &face);
 
 private: // Private Members (internal use)
   Assignable<XNodeSet> nodes_;
   BoolVector active_;
   idx_t rank_; // number of dimensions
 
-  Ref<XDofSpace> dofs_; 
+  Ref<XDofSpace> dofs_;
   Ref<Constraints> cons_;
-  IdxVector U_doftypes_; // displcement dof types
-  IdxVector T_doftypes_; // traction dof types
+  IdxVector U_doftypes_;      // displcement dof types
+  IdxVector T_doftypes_;      // traction dof types
   Ref<BoundaryShape> bshape_; // boundary element
-  int nIP_; // number of int. points of boundary element
-  int nnod_; // number of nodes of boundary element
-  int localrank_; // local rank of boundary element
+  int nIP_;                   // number of int. points of boundary element
+  int nnod_;                  // number of nodes of boundary element
+  int localrank_;             // local rank of boundary element
 
-  IdxVector bndNodes_[6];   // array of boundary nodes [ xmin, xmax, ymin, ymax, zmin, zmax ]
-  IdxVector trNodes_[3];    // array of boundary nodes of traction mesh [ xmin, ymin, zmin]
-  Tuple<idx_t, 3> masters_; // master corner nodes [ cornerX, cornerY, cornerZ ]
+  IdxVector bndNodes_[6];   // boundary nodes [ xmin, xmax, ymin, ymax ]
+  IdxVector trNodes_[3];    // traction mesh nodes [ xmin, ymin ]
+  Tuple<idx_t, 3> masters_; // corner nodes [ cornerX, cornerY, cornerZ ]
   idx_t ifixed_;            // master corner node [ corner0 ]
 
   Vector imposedStrain_; // total applied strain
@@ -132,12 +133,13 @@ private: // Private Members (internal use)
   double stepSize_;
   double maxTime_;
 
-  Vector dx_;
+  Vector dx_;    // specimen dimensions
+  Vector dx0_;   // smallest element dimensions
+  double factor; // coarsening factor
 
   String strainFile_;
   StrainType strainType_;
   FuncVector strainFunc_;
-
 };
 
 #endif
