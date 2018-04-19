@@ -104,7 +104,7 @@ private: // Private Methods (internal use)
   template <typename T>
   void sortBndFace_(T &bndFace, const idx_t &index);
   void createTractionMesh_();
-  void coarsenMesh_(IdxVector &trFace, const idx_t &index);
+  void coarsenMesh_(FlexVector &trFace, const idx_t &index);
   void augmentMatrix_(Ref<MatrixBuilder> mbuilder,
                       const Vector &force,
                       const Vector &disp);
@@ -127,7 +127,7 @@ private: // Private Members (internal use)
   int localrank_;             // local rank of boundary element
 
   IdxVector bndNodes_[6];   // boundary nodes [ xmin, xmax, ymin, ymax ]
-  IdxVector trNodes_[3];    // traction mesh nodes [ xmin, ymin ]
+  FlexVector trNodes_[3];    // traction mesh nodes [ xmin, ymin ]
   Tuple<idx_t, 3> masters_; // corner nodes [ cornerX, cornerY, cornerZ ]
   idx_t ifixed_;            // master corner node [ corner0 ]
 

@@ -542,7 +542,7 @@ void WeakPeriodicBCModel::createTractionMesh_()
   // Part 2 : Map all nodes onto xmin and ymin, reorder them and coarsen the mesh
   //---------------------------------------------------------------------------
 
-  IdxVector trFace; // space for traction face
+  FlexVector trFace; // space for traction face
   Vector coords(rank_); // coordinate vector
 
   // Loop over faces of trNodes_
@@ -578,7 +578,7 @@ void WeakPeriodicBCModel::createTractionMesh_()
     coarsenMesh_(trFace, index);
 
     // Assign trFace to trNodes_[ix]
-    trNodes_[ix].ref(trFace.clone());
+    trNodes_[ix] = trFace;
 
     // Print to verify
     System::warn() << "trNodes_[" << ix << "] = " << trNodes_[ix] << "\n";
@@ -587,7 +587,7 @@ void WeakPeriodicBCModel::createTractionMesh_()
   // Add dofs to traction mesh
   for (idx_t ix = 0; ix < rank_; ++ix)
   {
-    IdxVector trFace(trNodes_[ix]);
+    FlexVector trFace(trNodes_[ix]);
     for (idx_t in = 0; in < trFace.size(); ++in)
     {
       //dofs_->addDofs(trFace[in], T_doftypes_);
@@ -599,7 +599,7 @@ void WeakPeriodicBCModel::createTractionMesh_()
 //   coarsenMesh_
 //-----------------------------------------------------------------------
 
-void WeakPeriodicBCModel::coarsenMesh_(IdxVector &trFace, const idx_t &index)
+void WeakPeriodicBCModel::coarsenMesh_(FlexVector &trFace, const idx_t &index)
 {
   factor = 0.5;
   Vector dx(dx0_);
@@ -653,7 +653,7 @@ void WeakPeriodicBCModel::getTractionMeshNodes_(IdxVector &connect,
   if (rank_ == 2)
   {
     // Assign trNodes_[ix] to trFace
-    IdxVector trFace(trNodes_[ix]);
+    FlexVector trFace(trNodes_[ix]);
 
     // Loop over indices of trFace
     for (idx_t in = 0; in < trFace.size() - 1; ++in)
