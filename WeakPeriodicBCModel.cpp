@@ -462,7 +462,7 @@ void WeakPeriodicBCModel::sortBndNodes_()
     int ix = face / 2;
     // Get correct index
     idx_t index = ((ix == 0) ? 1 : 0);
-    // Perform bubble sort on bndNodes_[face]
+    // Perform bubblesort on bndNodes_[face]
     sortBndFace_(bndNodes_[face], index);
     // Print to verify
     System::warn() << " bndNodes_[" << face << "] = " << bndNodes_[face] << '\n';
@@ -473,12 +473,13 @@ void WeakPeriodicBCModel::sortBndNodes_()
 //   sortbndFace_
 //-----------------------------------------------------------------------
 
-void WeakPeriodicBCModel::sortBndFace_(IdxVector &bndFace, const idx_t &index)
+template <typename T>
+void WeakPeriodicBCModel::sortBndFace_(T &bndFace, const idx_t &index)
 {
   Vector c0(3); // coordinate vector of node "0"
   Vector c1(3); // coordinate vector of node "1"
 
-  // BubbleSort algorithm
+  // Bubblesort algorithm
   for (idx_t in = 0; in < bndFace.size(); ++in)
   {
     for (idx_t jn = 0; jn < bndFace.size() - 1 - in; ++jn)
@@ -507,8 +508,8 @@ void WeakPeriodicBCModel::createTractionMesh_()
   // Part 1: Find the smallest element dimensions along the x and y coordinates
   //---------------------------------------------------------------------------
 
-  Vector c1(3);       // coordinate vector of node "1"
   Vector c0(3);       // coordinate vector of node "0"
+  Vector c1(3);       // coordinate vector of node "1"
   double dx;          // dimensions of current element
   dx0_ = dx_.clone(); // smallest element dimensions
 
@@ -537,14 +538,18 @@ void WeakPeriodicBCModel::createTractionMesh_()
     }
   }
 
-  IdxVector trFace;     // space for traction face
+  //---------------------------------------------------------------------------
+  // Part 2 : Map all nodes onto xmin and ymin, reorder them and coarsen the mesh
+  //---------------------------------------------------------------------------
+
+  IdxVector trFace; // space for traction face
   Vector coords(rank_); // coordinate vector
 
   // Loop over faces of trNodes_
   for (idx_t ix = 0; ix < rank_; ++ix)
   {
-    IdxVector inodes(bndNodes_[ix * 2]);     // bndFace_min
-    IdxVector jnodes(bndNodes_[ix * 2 + 1]); // bndFace_max
+    IdxVector inodes(bndNodes_[2 * ix]);     // bndFace_min
+    IdxVector jnodes(bndNodes_[2 * ix + 1]); // bndFace_max
     trFace.resize(inodes.size() + jnodes.size());
 
     // Loop over indices of inodes
@@ -600,6 +605,35 @@ void WeakPeriodicBCModel::coarsenMesh_(IdxVector &trFace, const idx_t &index)
   Vector dx(dx0_);
   dx[0] /= factor;
   dx[1] /= factor;
+
+  Vector c0(3); // coordinate vector of node "0"
+  Vector c1(3); // coordinate vector of node "1"
+  Vector cn(3); // coordinate vector of node "n"
+  nodes_.getNodeCoords(cn,trFace.back());
+
+  // // Loop over indices of trFace
+  // for (idx_t in = 0; in < trFace.size(); ++in)
+  // {
+
+  //   // Get nodal coordinates
+  //   nodes_.getNodeCoords(c0, trFace[in]);
+  //   nodes_.getNodeCoords(c1, trFace[in + 1]);
+
+  //   // Delete indices
+  //   while (c1[index] - c0[index] < dx[index])
+  //   {
+  //     // trFace.erase(in + 1);
+
+  //     // Delete the current node
+
+  //     // Assign c1 to the next node in line
+  //     nodes_.getNodeCoords(c1, trFace[in + 1]);
+  //   }
+  //   if (cn[index] - c1[index] < dx[index])
+  //   {
+  //     // delete all nodes up to but not including the last one
+  //   }
+  // }
 }
 
 //-----------------------------------------------------------------------
@@ -721,7 +755,7 @@ void WeakPeriodicBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
       Ke = 0.0;
       for (idx_t ip = 0; ip < nIP_; ip++)
       {
-        bshape_->getLocalPoint(u, X[ip], 0.1, coords);
+        bshape_->getLocalPoint(u, X(ALL, ip), 0.1, coords);
         bshape_->evalShapeFunctions(H[ip], u);
 
         // Ke += matmul(H[ip]*N[ip])*w[ip]

@@ -14,6 +14,7 @@
 //   class WeakPeriodicBCModel
 //-----------------------------------------------------------------------
 
+#include <jem/util/Flex.h>
 #include <jive/model/Model.h>
 #include <jive/model/ModelFactory.h>
 
@@ -31,6 +32,7 @@ using namespace jem;
 
 using jem::numeric::Function;
 using jem::util::Properties;
+using jem::util::Flex;
 using jive::BoolVector;
 using jive::IdxVector;
 using jive::Vector;
@@ -54,6 +56,7 @@ class WeakPeriodicBCModel : public Model
 public: // public members:
   typedef WeakPeriodicBCModel Self;
   typedef Model Super;
+  typedef Flex<idx_t> FlexVector;
   typedef Array<Ref<Function>, 1> FuncVector;
 
   static const char *NODE_GROUPS[6];
@@ -98,7 +101,8 @@ private: // Private Methods (internal use)
   FuncVector makeStrainFuncs_(const Vector &strainRate) const;
   FuncVector getStrainFuncs_(const Properties &globdat) const;
   void sortBndNodes_();
-  void sortBndFace_(IdxVector &bndFace, const idx_t &index);
+  template <typename T>
+  void sortBndFace_(T &bndFace, const idx_t &index);
   void createTractionMesh_();
   void coarsenMesh_(IdxVector &trFace, const idx_t &index);
   void augmentMatrix_(Ref<MatrixBuilder> mbuilder,
