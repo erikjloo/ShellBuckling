@@ -106,12 +106,9 @@ private: // Private Methods (internal use)
   void sortBndFace_(T &bndFace, const idx_t &index);
   void createTractionMesh_();
   void coarsenMesh_(FlexVector &trFace);
-  void augmentMatrix_(Ref<MatrixBuilder> mbuilder,
-                      const Vector &force,
-                      const Vector &disp);
-  void getTractionMeshNodes_(IdxVector &connect,
-                             const Vector &x,
-                             const idx_t &face);
+  void augmentFext_(const Vector &fext);
+  void augmentMatrix_(Ref<MatrixBuilder> mbuilder);
+  void getTractionMeshNodes_(IdxVector &connect, const Vector &x, const idx_t &face);
 
 private: // Private Members (internal use)
   Assignable<XNodeSet> nodes_;
@@ -120,7 +117,7 @@ private: // Private Members (internal use)
 
   Ref<XDofSpace> dofs_;
   Ref<Constraints> cons_;
-  IdxVector U_doftypes_;      // displcement dof types
+  IdxVector U_doftypes_;      // displacement dof types
   IdxVector T_doftypes_;      // traction dof types
   Ref<BoundaryShape> bshape_; // boundary element
   int nIP_;                   // number of int. points of boundary element
