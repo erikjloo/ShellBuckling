@@ -65,6 +65,8 @@ public: // Public Members:
   static const char *STRAINPATH_PROP;
   static const char *MAXTIME_PROP;
   static const char *ACTIVE_PROP;
+  static const char *COARSEN_FACTOR;
+  static const char *IMPOSED_STRAIN;
 
   enum StrainType
   {
@@ -98,7 +100,6 @@ private: // Private Methods (internal use)
   void checkCommit_(const Properties &params, const Properties &globdat) const;
   void fixCorner_() const;
   void applyStrain_(const Vector &strain) const;
-  void setPeriodicCons_() const;
   FuncVector makeStrainFuncs_(const Vector &strainRate) const;
   FuncVector getStrainFuncs_(const Properties &globdat) const;
   void sortBndNodes_();
@@ -107,7 +108,7 @@ private: // Private Methods (internal use)
   void createTractionMesh_();
   void coarsenMesh_(FlexVector &trFace);
   void augmentFext_(const Vector &fext);
-  void augmentMatrix_(Ref<MatrixBuilder> mbuilder);
+  void augmentMatrix_(Ref<MatrixBuilder> mbuilder, const Vector &fint, const Vector &disp);
   void getTractionMeshNodes_(IdxVector &connect, const Vector &x, const idx_t &face);
 
 private: // Private Members (internal use)
@@ -128,6 +129,8 @@ private: // Private Members (internal use)
   FlexVector trNodes_[3];   // traction mesh nodes [ xmin, ymin ]
   Tuple<idx_t, 3> masters_; // corner nodes [ cornerX, cornerY, cornerZ ]
   idx_t ifixed_;            // master corner node [ corner0 ]
+
+  Vector strain_; // applied Strain
 
   Vector imposedStrain_; // total applied strain
 

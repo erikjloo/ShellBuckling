@@ -9,6 +9,7 @@
 
 //#include <jem/base/array/utilities.h>
 #include <jem/base/array/operators.h>
+#include <jem/base/array/select.h>
 //#include <jem/base/limits.h>
 #include <jem/base/System.h>
 #include <jem/base/Error.h>
@@ -18,6 +19,7 @@
 #include <jem/util/Properties.h>
 
 #include <jive/model/Actions.h>
+#include <jive/model/StateVector.h>
 //#include <jive/util/utilities.h>
 #include <jive/util/FuncUtils.h>
 //#include <jive/util/Printer.h>
@@ -33,6 +35,7 @@ using jem::Error;
 using jem::io::endl;
 using jem::numeric::UserFunc;
 using jive::fem::NodeGroup;
+using jive::model::StateVector;
 using jive::util::FuncUtils;
 
 //=======================================================================
@@ -47,6 +50,8 @@ const char *WeakPeriodicBCModel::STRAINRATE_PROP = "strainRate";
 const char *WeakPeriodicBCModel::STRAINPATH_PROP = "strainPath";
 const char *WeakPeriodicBCModel::MAXTIME_PROP = "maxTime";
 const char *WeakPeriodicBCModel::ACTIVE_PROP = "active";
+const char *WeakPeriodicBCModel::COARSEN_FACTOR = "coarsenFactor";
+const char *WeakPeriodicBCModel::IMPOSED_STRAIN = "imposedStrain";
 
 //-----------------------------------------------------------------------
 //   constructor
@@ -69,9 +74,15 @@ WeakPeriodicBCModel::WeakPeriodicBCModel
   nodes_ = XNodeSet::find(globdat);
   rank_ = nodes_.rank();
 
-  // Corner Nodes:
+  // Corner Nodes
   masters_ = -1; // Initialize cornerx, cornery, cornerz
   ifixed_ = -1;  // Initialize corner 0
+
+  // Coarsening Factor
+  myProps.find(factor, COARSEN_FACTOR);
+
+  // Strain
+  myProps.find(strain_, IMPOSED_STRAIN);
 
   // Variables required by applyStrain_()
   idx_t strCount = STRAIN_COUNTS[rank_];
@@ -190,20 +201,37 @@ bool WeakPeriodicBCModel::takeAction(const String &action,
   if (action == Actions::GET_CONSTRAINTS)
   {
     fixCorner_();
-    if (strainType_ != Free)
-      applyStrain_(imposedStrain_);
+    applyStrain_(strain_);
+
+    // if (strainType_ != Free)
+    // {
+    //   applyStrain_(imposedStrain_);
+    // }
+  }
+  if (action == Actions::GET_EXT_VECTOR)
+  {
+    // Get the external force vector
+    Vector fext;
+    params.get(fext, ActionParams::EXT_VECTOR);
+
+    // Augment and return fext
+    augmentFext_(fext);
     return true;
   }
-  // if (action == Actions::GET_EXT_VECTOR)
-  // {
-  //   return true;
-  // }
   if (action == Actions::GET_MATRIX0)
   {
+    // Get the current displacements.
+    Vector disp;
+    StateVector::get(disp, dofs_, globdat);
+
+    // Get the matrix builder and the internal force vector.
+    Vector fint;
     Ref<MatrixBuilder> mbuilder;
-    // Get the matrix builder
+    params.get(fint, ActionParams::INT_VECTOR);
     params.find(mbuilder, ActionParams::MATRIX0);
-    augmentMatrix_(mbuilder);
+
+    // Augment K0 and return fint
+    augmentMatrix_(mbuilder, fint, disp);
     return true;
   }
   if (action == SolverNames::CHECK_COMMIT)
@@ -242,7 +270,6 @@ void WeakPeriodicBCModel::init_(const Properties &globdat)
     NodeGroup edge = NodeGroup::get(PBCGroupInputModule::EDGES[face], nodes_, globdat, getContext());
     bndNodes_[face].ref(edge.getIndices());
   }
-  System::warn() << "================================================\n";
   System::warn() << " bndNodes = [xmin, xmax, ymin, ymax] = \n";
   sortBndNodes_();
 
@@ -257,7 +284,6 @@ void WeakPeriodicBCModel::init_(const Properties &globdat)
     box_[ix * 2 + 1] = coords(ix, bndNodes_[ix * 2 + 1][0]);
     dx_[ix] = box_[ix * 2 + 1] - box_[ix * 2];
   }
-  System::warn() << "================================================\n";
   System::warn() << "Box dimensions = " << box_ << "\n";
   System::warn() << "dx_ = " << dx_ << "\n";
 
@@ -270,7 +296,6 @@ void WeakPeriodicBCModel::init_(const Properties &globdat)
   System::warn() << "Masters = [CornerX, CornerY] = " << masters_ << "\n";
 
   // Create traction mesh
-  System::warn() << "================================================\n";
   System::warn() << " trNodes = [xmin, ymin] = \n";
   createTractionMesh_();
 
@@ -341,61 +366,16 @@ void WeakPeriodicBCModel::applyStrain_(const Vector &strain) const
   {
     for (idx_t j = 0; j < rank_; ++j)
     {
-      idx_t ivoigt = voigtUtilities::voigtIndex(i, j, rank_);
-      if (strainFunc_[ivoigt] != NIL)
-      {
-        idx_t idof = dofs_->getDofIndex(masters_[i], U_doftypes_[j]);
-        cons_->addConstraint(idof, dx_[i] * eps(i, j));
-      }
+      // idx_t ivoigt = voigtUtilities::voigtIndex(i, j, rank_);
+      idx_t idof = dofs_->getDofIndex(masters_[i], U_doftypes_[j]);
+      cons_->addConstraint(idof, dx_[i] * eps(i, j));
+      // if (strainFunc_[ivoigt] != NIL)
+      // {
+      //   idx_t idof = dofs_->getDofIndex(masters_[i], U_doftypes_[j]);
+      //   cons_->addConstraint(idof, dx_[i] * eps(i, j));
+      // }
     }
   }
-}
-
-//-----------------------------------------------------------------------
-//   setPeriodicCons_
-//-----------------------------------------------------------------------
-
-void WeakPeriodicBCModel::setPeriodicCons_() const
-
-{
-  // loop over right and top edge: connect to opposite edges
-  // relative to corner movement
-
-  IdxVector idofs(2);
-  Vector coefs(2);
-  coefs = 1.;
-
-  // loop over face pairs (ix)
-  for (idx_t ix = 0; ix < rank_; ix++)
-  {
-    if (active_[ix])
-    {
-      IdxVector inodes(bndNodes_[ix * 2]);     // bndFace_min
-      IdxVector jnodes(bndNodes_[ix * 2 + 1]); // bndFace_max
-
-      // Loop over indices of inodes (bndFace_min)
-      for (idx_t in = 0; in < inodes.size(); in++)
-      {
-        if (jnodes[in] != masters_[ix])
-        {
-          // Loop over dof types
-          for (idx_t jx = 0; jx < rank_; ++jx)
-          {
-            // Master dofs: opposite node and relevant corner node
-            idofs[0] = dofs_->getDofIndex(inodes[in], U_doftypes_[jx]);
-            idofs[1] = dofs_->getDofIndex(masters_[ix], U_doftypes_[jx]);
-
-            // Dofs of dependent (slave) node jd
-            idx_t jdof = dofs_->getDofIndex(jnodes[in], U_doftypes_[jx]);
-
-            // Add constraint jdof = idof[0]*coef[0] + idof[1]*coef[1]
-            cons_->addConstraint(jdof, idofs, coefs);
-          }
-        }
-      }
-    }
-  }
-  //cons_->printTo(jive::util::Printer::get());
 }
 
 //-----------------------------------------------------------------------
@@ -614,7 +594,6 @@ void WeakPeriodicBCModel::coarsenMesh_(FlexVector &trFace)
 {
   using jem::numeric::norm2;
 
-  factor = 0.3;
   double dx = (dx0_[0] + dx0_[1]) / (2 * factor);
 
   Vector c0(3); // coordinate vector of node "0"
@@ -718,11 +697,12 @@ void WeakPeriodicBCModel::getTractionMeshNodes_(IdxVector &connect,
 //   augmentMatrix_
 //-----------------------------------------------------------------------
 
-void WeakPeriodicBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder)
+void WeakPeriodicBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
+                                         const Vector &fint,
+                                         const Vector &disp)
 {
   using jem::numeric::matmul;
 
-  System::warn() << "===========================================\n";
   System::warn() << "Augmenting Matrix !!\n";
 
   // Variables related to both U mesh and T mesh:
@@ -733,18 +713,23 @@ void WeakPeriodicBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder)
   IdxVector idofs(nnod_ * rank_); // dof indices related to U
   Vector w(nIP_);                 // Integration weights [ jw[1] jw[2] ], jw[ip] =j[ip]*w[ip]
   Matrix n(nnod_, nIP_);          // shape functions of U mesh: N = [ n[1] n[2] ], n[ip] = [n1 n2]'
+  Matrix N(rank_, nnod_ * rank_); // N matrix of U mesh
   Matrix X(rank_, nIP_);          // global coordinates of IP; X = [ x[1] x[2] ], x[i] = [x y z]'
+  N = 0.0;
 
   // Variables related to element on T mesh:
   IdxVector jdofs(nnod_ * rank_); // dof indices related to T
-  Vector u(localrank_);           // local coordinates of given X[ip]; u = xi
+  Vector xi(localrank_);          // local coordinates of given X[ip]; u = xi
   Vector h(nnod_);                // shape functions of T; h = [h1 h2]'
+  Matrix H(rank_, nnod_ * rank_); // H matrix of T mesh
+  Vector tr(nnod_ * rank_);       // Vector of tractions of each element
+  Vector u(nnod_ * rank_);        // Vector of displacements of each element
+  H = 0.0;
 
   // Matrices and vector to be assembled:
-  Matrix N(rank_, nnod_ * rank_); // N matrix of U mesh
-  Matrix H(rank_, nnod_ * rank_); // H matrix of T mesh
-  N = H = 0.0;
-  Matrix Ke(nnod_ * rank_, nnod_ * rank_); // Ke = w[ip]*N[ip]*H[ip]
+  Matrix Ke(nnod_ * rank_, nnod_ * rank_);  // Ke = w[ip]*N[ip]*H[ip]
+  Matrix KeT(nnod_ * rank_, nnod_ * rank_); // Ke = w[ip]*H[ip]*N[ip]
+  Vector fe(nnod_ * rank_);                 // fe = Ke*t or KeT*u
 
   // Loop over faces of bndNodes_
   for (idx_t face = 0; face < 2 * rank_; ++face)
@@ -755,7 +740,7 @@ void WeakPeriodicBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder)
     // Loop over indices of bndFace
     for (idx_t in = 0; in < bndFace.size() - 1; ++in)
     {
-      // Get idofs, w and N from displacement mesh
+      // Get idofs and w from U-mesh
       connect[0] = bndFace[in];
       connect[1] = bndFace[in + 1];
       dofs_->getDofIndices(idofs, connect, U_doftypes_);
@@ -764,7 +749,7 @@ void WeakPeriodicBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder)
       n = bshape_->getShapeFunctions();
       bshape_->getGlobalIntegrationPoints(X, coords);
 
-      // Get jdofs from traction mesh
+      // Get jdofs from T-mesh
       getTractionMeshNodes_(connect, X(ALL, 0), face);
       dofs_->getDofIndices(jdofs, connect, U_doftypes_);
       nodes_.getSomeCoords(coords, connect);
@@ -772,13 +757,13 @@ void WeakPeriodicBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder)
       Ke = 0.0;
       for (idx_t ip = 0; ip < nIP_; ip++)
       {
-        // Assemble N matrix
+        // Get N-matrix from U-mesh
         N(0, 0) = N(1, 1) = n(0, ip);
         N(0, 2) = N(1, 3) = n(1, ip);
 
-        // Assemble H matrix
-        bshape_->getLocalPoint(u, X(ALL, ip), 0.1, coords);
-        bshape_->evalShapeFunctions(h, u);
+        // Get H-matrix from T-mesh
+        bshape_->getLocalPoint(xi, X(ALL, ip), 0.1, coords);
+        bshape_->evalShapeFunctions(h, xi);
         H(0, 0) = H(1, 1) = h[0];
         H(0, 2) = H(1, 3) = h[1];
 
@@ -789,19 +774,40 @@ void WeakPeriodicBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder)
           Ke += w[ip] * matmul(N.transpose(), H);
       }
 
-      // Add Ke and KeT to the global stiffness matrix.
+      // Add Ke and KeT to mbuilder
+      KeT = Ke.transpose();
       mbuilder->addBlock(idofs, jdofs, Ke);
-      mbuilder->addBlock(jdofs, idofs, Ke.transpose());
+      mbuilder->addBlock(jdofs, idofs, KeT);
+
+      // Assemble U-mesh fe
+      tr = select(disp, jdofs);
+      fe = matmul(Ke, tr);
+
+      // Add fe to fint[idofs]
+      System::warn() << fe << " \n";
+      select(fint, idofs) += fe;
+
+      // Assemble T-mesh fe
+      u = select(disp, idofs);
+      fe = matmul(KeT, u);
+
+      // Add fe to fint[jdofs]
+      System::warn() << fe << " \n";
+      select(fint, jdofs) += fe;
     }
   }
 }
 
 //-----------------------------------------------------------------------
-//   augmentMatrix_
+//   augmentFext_
 //-----------------------------------------------------------------------
 
 void WeakPeriodicBCModel::augmentFext_(const Vector &fext)
 {
+
+  System::warn() << "===========================================\n";
+  System::warn() << "Augmenting fext !!\n";
+
   using jem::numeric::matmul;
 
   // Variables related to element T mesh:
@@ -811,22 +817,26 @@ void WeakPeriodicBCModel::augmentFext_(const Vector &fext)
   Vector w(nIP_);                 // Integration weights [ jw[1] jw[2] ], jw[ip] =j[ip]*w[ip]
   Matrix h(nnod_, nIP_);          // shape functions of T; h = [h1 h2]'
   Matrix H(rank_, nnod_ * rank_); // H matrix of T mesh
-  Vector fe(nnod_ * rank_);       // Ke = w[ip]*H[ip]*u(cornerx/y)
-  Vector u_cornerx(rank_);
-  Vector u_cornery(rank_);
-  Vector u_cornerz(rank_);
+  Matrix eps(rank_, rank_);       // strain matrix
+  Vector u_corner(rank_);         // vector of corner displacements [ux uy]
+  Vector fe(nnod_ * rank_);       // fe = w[ip]*H[ip]*u(cornerx/y)
+  voigtUtilities::voigt2TensorStrain(eps, strain_);
+  H = 0.0;
 
   // Loop over faces of trNodes_
   for (idx_t ix = 0; ix < rank_; ++ix)
   {
+    for (idx_t jx = 0; jx < rank_; ++jx)
+      u_corner[jx] = dx_[ix] * eps(ix, jx);
+
     // Assign trNodes_[ix] to trFace
     FlexVector trFace(trNodes_[ix]);
 
     // Loop over indices of trFace
     int jn = 0;
-    for (Iter in = trFace.begin(); in < trFace.end(); ++in)
+    for (Iter in = trFace.begin(); in < trFace.end() - 1; ++in)
     {
-      // Get jdofs, w and N from displacement mesh
+      // Get jdofs, w and H from traction mesh
       connect[0] = trFace[jn];
       connect[1] = trFace[jn + 1];
       dofs_->getDofIndices(jdofs, connect, U_doftypes_);
@@ -841,20 +851,18 @@ void WeakPeriodicBCModel::augmentFext_(const Vector &fext)
         H(0, 0) = H(1, 1) = h(0, ip);
         H(0, 2) = H(1, 3) = h(1, ip);
 
-        // Assemble ft
-        if (ix == 0)
-          fe += w[ip] * matmul(H.transpose(), u_cornerx);
-        else if (ix == 2)
-          fe += w[ip] * matmul(H.transpose(), u_cornery);
-        else if (ix == 4)
-          fe += w[ip] * matmul(H.transpose(), u_cornerz);
+        // Assemble fe
+        fe += w[ip] * matmul(H.transpose(), u_corner);
+        System::warn() << "fe = " << fe << "\n";
       }
+      jn += 1;
 
-      // Add ft to fext
-      //select(fext, jdofs) += fe;
+      // Add fe to fext
+      select(fext, jdofs) += fe;
     }
   }
 }
+
 //=======================================================================
 //   related functions
 //=======================================================================
