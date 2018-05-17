@@ -66,7 +66,6 @@ public: // Public Members:
   static const char *MAXTIME_PROP;
   static const char *ACTIVE_PROP;
   static const char *COARSEN_FACTOR;
-  static const char *IMPOSED_STRAIN;
 
   enum StrainType
   {
@@ -107,7 +106,7 @@ private: // Private Methods (internal use)
   void sortBndFace_(T &bndFace, const idx_t &index);
   void createTractionMesh_();
   void coarsenMesh_(FlexVector &trFace);
-  void augmentFext_(const Vector &fext);
+  void augmentFext_(const Vector &fext, const Vector &disp);
   void augmentMatrix_(Ref<MatrixBuilder> mbuilder, const Vector &fint, const Vector &disp);
   void getTractionMeshNodes_(IdxVector &connect, const Vector &x, const idx_t &face);
 
