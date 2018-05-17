@@ -7,11 +7,23 @@
 
 #include "PeriodicBCModel.h"
 
+#include <jem/util/Flex.h>
+#include <jive/fem/XNodeSet.h>
+#include <jive/algebra/MatrixBuilder.h>
+#include <jive/geom/BoundaryLine.h>
+
+using jem::util::Flex;
+using jive::algebra::MatrixBuilder;
+using jive::geom::BoundaryLine2;
+using jive::geom::BoundaryShape;
+
 class LagrangePeriodicModel : public PeriodicBCModel
 {
     public:
         typedef PeriodicBCModel Self;
         typedef Model Super;
+        typedef Flex<idx_t> FlexVector;
+        typedef Flex<idx_t>::Iterator Iter;
         typedef Array<Ref<Function>, 1> FuncVector;
 
         static const char *NODE_GROUPS[6];
@@ -22,87 +34,37 @@ class LagrangePeriodicModel : public PeriodicBCModel
         static const char *DUPEDNODES_PROP;
         static const char *IMPOSED_STRAIN;
 
-    LagrangePeriodicModel
+        static const char *COARSEN_FACTOR;
 
-        (const String &name,
-         const Properties &conf,
-         const Properties &props,
-         const Properties &globdat);
+        LagrangePeriodicModel
 
-    // virtual void configure
+            (const String &name,
+             const Properties &conf,
+             const Properties &props,
+             const Properties &globdat);
 
-    //     (const Properties &props,
-    //      const Properties &globdat);
+        virtual bool takeAction
 
-    // virtual void getConfig
+            (const String &action,
+             const Properties &params,
+             const Properties &globdat);
 
-    //     (const Properties &conf,
-    //      const Properties &globdat) const;
+    protected:
+        virtual ~LagrangePeriodicModel();
 
-    virtual bool takeAction
+        void init_(const Properties &globdat);
 
-        (const String &action,
-         const Properties &params,
-         const Properties &globdat);
+    protected:
+        Ref<BoundaryShape> bshape_; // boundary element
+        int nIP_;                   // number of int. points of boundary element
+        int nnod_;                  // number of nodes of boundary element
+        int localrank_;             // local rank of boundary element
 
-  protected:
-    virtual ~LagrangePeriodicModel();
+        FlexVector trNodes_[3]; // traction mesh nodes [ xmin, ymin ]
 
-  protected:
-    void init_
-
-        (const Properties &globdat);
-
-//     void setPeriodicCons_() const;
-
-//     void advance_() const;
-
-//     void checkCommit_
-
-//         (const Properties &params,
-//          const Properties &globdat) const;
-
-//     void fixCorner_() const;
-
-//     void applyStrain_
-
-//         (const Vector &strain) const;
-
-//     FuncVector makeStrainFuncs_
-
-//         (const Vector &strainRate) const;
-
-//     FuncVector getStrainFuncs_
-
-//         (const Properties &globdat) const;
-
-//   private:
-//     IdxVector dofTypes_;
-
-//     Assignable<NodeSet> nodes_;
-//     BoolVector active_;
-
-//     Ref<XDofSpace> dofs_;
-//     Ref<Constraints> cons_;
-
-//     IdxVector bndNodes_[6];   // indices of boundary nodes
-//     Tuple<idx_t, 3> masters_; // master corner nodes
-//     idx_t ifixed_;
-
-//     Vector imposedStrain_; //total applied strain
-
-//     double time_;
-//     double stepSize_;
-//     double maxTime_;
-
-//     Vector dx_;
-//     idx_t rank_;
-
-//     String strainFile_;
-//     StrainType strainType_;
-//     FuncVector strainFunc_;
-
-//     String dupedNodeGroup_;
+        Vector box_;   // specimen coordinates
+        Vector dx0_;   // smallest element dimensions
+        double factor; // coarsening factor
 };
 
 #endif

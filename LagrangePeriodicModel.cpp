@@ -45,6 +45,7 @@ const char *LagrangePeriodicModel::STRAINPATH_PROP = "strainPath";
 const char *LagrangePeriodicModel::MAXTIME_PROP = "maxTime";
 const char *LagrangePeriodicModel::ACTIVE_PROP = "active";
 const char *LagrangePeriodicModel::DUPEDNODES_PROP = "duplicatedNodes";
+const char *LagrangePeriodicModel::COARSEN_FACTOR = "coarsenFactor";
 
 //-----------------------------------------------------------------------
 //   constructor
@@ -57,7 +58,8 @@ LagrangePeriodicModel::LagrangePeriodicModel
      const Properties &props,
      const Properties &globdat) : PeriodicBCModel::PeriodicBCModel(name, conf, props, globdat)
 {
-    System::warn() << "More creation stuff\n";
+    Properties myProps = props.getProps(myName_);
+    myProps.find(factor, COARSEN_FACTOR);
 }
 
 LagrangePeriodicModel::~LagrangePeriodicModel()
