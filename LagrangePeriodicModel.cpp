@@ -1,9 +1,9 @@
 /*
  *
- * A model to impose periodic boundary conditions on
- * the outer boundary of unit cells.
+ * A model to impose weak periodic boundary
+ * conditions on the 2D unit cells.
  *
- * Frans van der Meer, November 2014
+ * Erik Giesen Loo, April 2018
  *
  */
 
@@ -45,11 +45,6 @@ using jive::util::FuncUtils;
 //   static constants
 //-----------------------------------------------------------------------
 
-const char *LagrangePeriodicModel::STRAINRATE_PROP = "strainRate";
-const char *LagrangePeriodicModel::STRAINPATH_PROP = "strainPath";
-const char *LagrangePeriodicModel::MAXTIME_PROP = "maxTime";
-const char *LagrangePeriodicModel::ACTIVE_PROP = "active";
-const char *LagrangePeriodicModel::DUPEDNODES_PROP = "duplicatedNodes";
 const char *LagrangePeriodicModel::COARSEN_FACTOR = "coarsenFactor";
 
 //-----------------------------------------------------------------------
@@ -68,6 +63,10 @@ LagrangePeriodicModel::LagrangePeriodicModel
   nodes_ = XNodeSet::find(globdat);
 }
 
+//-----------------------------------------------------------------------
+//   Destructor
+//-----------------------------------------------------------------------
+
 LagrangePeriodicModel::~LagrangePeriodicModel()
 {
 }
@@ -76,12 +75,9 @@ LagrangePeriodicModel::~LagrangePeriodicModel()
 //   takeAction
 //-----------------------------------------------------------------------
 
-bool LagrangePeriodicModel::takeAction
-
-    (const String &action,
-     const Properties &params,
-     const Properties &globdat)
-
+bool LagrangePeriodicModel::takeAction(const String &action,
+                                       const Properties &params,
+                                       const Properties &globdat)
 {
   using jive::model::ActionParams;
   using jive::model::Actions;
@@ -89,58 +85,73 @@ bool LagrangePeriodicModel::takeAction
   if (action == Actions::INIT)
   {
     init_(globdat);
-
     return true;
   }
 
   if (action == Actions::ADVANCE)
   {
     PeriodicBCModel::advance_();
-
     return true;
   }
 
   if (action == SolverNames::SET_STEP_SIZE)
   {
     double dt, dt0;
-
     params.get(dt, SolverNames::STEP_SIZE);
     params.get(dt0, SolverNames::STEP_SIZE_0);
-
     stepSize_ = dt / dt0;
-
     return true;
   }
 
   if (action == Actions::GET_CONSTRAINTS)
   {
     PeriodicBCModel::fixCorner_();
-
-    // apply strain (on corner nodes)
-
     if (strainType_ != Free)
-    {
       PeriodicBCModel::applyStrain_(imposedStrain_);
-    }
-
-    // apply periodic conditions
-
-    PeriodicBCModel::setPeriodicCons_();
-
     return true;
   }
 
+  if (action == Actions::GET_EXT_VECTOR)
+  {
+    // Get the current displacements.
+    Vector disp;
+    StateVector::get(disp, dofs_, globdat);
+
+    // Get the external force vector
+    Vector fext;
+    params.get(fext, ActionParams::EXT_VECTOR);
+
+    // Augment and return fext
+    augmentFext_(fext, disp);
+    return true;
+  }
+
+  if (action == Actions::GET_MATRIX0)
+  {
+    // Get the current displacements.
+    Vector disp;
+    StateVector::get(disp, dofs_, globdat);
+
+    // Get the matrix builder and the internal force vector.
+    Vector fint;
+    Ref<MatrixBuilder> mbuilder;
+    params.get(fint, ActionParams::INT_VECTOR);
+    params.find(mbuilder, ActionParams::MATRIX0);
+
+    // Augment K0 and return fint
+    augmentMatrix_(mbuilder, fint, disp);
+    return true;
+  }
+  
   if (action == SolverNames::CHECK_COMMIT)
   {
     PeriodicBCModel::checkCommit_(params, globdat);
-
     return true;
   }
 
   if (action == Actions::COMMIT)
   {
     time_ += stepSize_;
-
     return true;
   }
 
@@ -151,11 +162,9 @@ bool LagrangePeriodicModel::takeAction
 //   init_
 //-----------------------------------------------------------------------
 
-void LagrangePeriodicModel::init_
-
-    (const Properties &globdat)
-
+void LagrangePeriodicModel::init_(const Properties &globdat)
 {
+  // Get dofs and cons
   dofs_ = XDofSpace::get(nodes_.getData(), globdat);
   cons_ = Constraints::get(dofs_, globdat);
 
@@ -165,16 +174,12 @@ void LagrangePeriodicModel::init_
   dx_.resize(rank_);
 
   // Add displacement dof types
-
   dofTypes_[0] = dofs_->addType("dx");
   dofTypes_[1] = dofs_->addType("dy");
   if (rank_ > 2)
-  {
     dofTypes_[2] = dofs_->addType("dz");
-  }
 
-  // get boundary nodes
-
+  // Get boundary nodes
   for (idx_t face = 0; face < 2 * rank_; ++face)
   {
     NodeGroup edge = NodeGroup::get(PBCGroupInputModule::EDGES[face], nodes_, globdat, getContext());
@@ -184,7 +189,6 @@ void LagrangePeriodicModel::init_
   sortBndNodes_();
 
   // Get specimen dimensions
-
   Matrix coords(nodes_.toMatrix());
   for (idx_t ix = 0; ix < rank_; ++ix)
   {
@@ -211,7 +215,7 @@ void LagrangePeriodicModel::init_
   bshape_ = BoundaryLine2::getShape("line", bscheme);
   nIP_ = bshape_->integrationPointCount();
   nnod_ = bshape_->nodeCount();
-  ndof_ = nnod_*rank_;
+  ndof_ = nnod_ * rank_;
   localrank_ = bshape_->localRank();
 }
 
@@ -483,26 +487,26 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
   Matrix coords(rank_, nnod_); // node coordinates = [ x[1] x[2] ], x = [x y z]'
 
   // Variables related to element on U mesh:
-  IdxVector idofs(nnod_ * rank_); // dof indices related to U
-  Vector w(nIP_);                 // Integration weights = [ jw[1] jw[2] ]
-  Matrix n(nnod_, nIP_);          // shape functions of U mesh: N = [ n[1] n[2] ], n[ip] = [n1 n2]'
-  Matrix N(rank_, nnod_ * rank_); // N matrix of U mesh [n1 0 n2 0; 0 n1 0 n2]
-  Matrix X(rank_, nIP_);          // global coordinates of IP; X = [ x[1] x[2] ], x[ip] = [x y z]'
+  IdxVector idofs(ndof_); // dof indices related to U
+  Vector w(nIP_);         // Integration weights = [ jw[1] jw[2] ]
+  Matrix n(nnod_, nIP_);  // shape functions of U mesh: N = [ n[1] n[2] ], n[ip] = [n1 n2]'
+  Matrix N(rank_, ndof_); // N matrix of U mesh [n1 0 n2 0; 0 n1 0 n2]
+  Matrix X(rank_, nIP_);  // global coordinates of IP; X = [ x[1] x[2] ], x[ip] = [x y z]'
   N = 0.0;
 
   // Variables related to element on T mesh:
-  IdxVector jdofs(nnod_ * rank_); // dof indices related to T
-  Vector xi(localrank_);          // local coordinates of given X[ip]; u = xi
-  Vector h(nnod_);                // shape functions of T; h = [h1 h2]'
-  Matrix H(rank_, nnod_ * rank_); // H matrix of T mesh [h1 0 h2 0l 0 h1 0 h2]
-  Vector tr(nnod_ * rank_);       // Vector of tractions of each element
-  Vector u(nnod_ * rank_);        // Vector of displacements of each element
+  IdxVector jdofs(ndof_); // dof indices related to T
+  Vector xi(localrank_);  // local coordinates of given X[ip]; u = xi
+  Vector h(nnod_);        // shape functions of T; h = [h1 h2]'
+  Matrix H(rank_, ndof_); // H matrix of T mesh [h1 0 h2 0l 0 h1 0 h2]
   H = 0.0;
 
   // Matrices and vector to be assembled:
-  Matrix Ke(nnod_ * rank_, nnod_ * rank_);  // Ke = w[ip]*N[ip]*H[ip]
-  Matrix KeT(nnod_ * rank_, nnod_ * rank_); // Ke = w[ip]*H[ip]*N[ip]
-  Vector fe(nnod_ * rank_);                 // fe = Ke*t or KeT*u
+  Vector tr(ndof_);         // Vector of tractions of each element
+  Vector u(ndof_);          // Vector of displacements of each element
+  Matrix Ke(ndof_, ndof_);  // Ke = w[ip]*N[ip]*H[ip]
+  Matrix KeT(ndof_, ndof_); // Ke = w[ip]*H[ip]*N[ip]
+  Vector fe(ndof_);         // fe = Ke*t or KeT*u
 
   // Loop over faces of bndNodes_
   for (idx_t face = 0; face < 2 * rank_; ++face)
@@ -568,10 +572,10 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
       fe = matmul(KeT, u);
 
       // Add fe to fint[jdofs]
-      // System::warn() << fe << " \n";
       select(fint, jdofs) += fe;
     }
   }
+  System::warn() << fint << " \n";
 }
 
 //-----------------------------------------------------------------------
@@ -582,17 +586,19 @@ void LagrangePeriodicModel::augmentFext_(const Vector &fext, const Vector &disp)
 {
   System::warn() << "Augmenting fext !!\n";
 
-  // Variables related to element T mesh:
-  IdxVector connect(nnod_);       // node indices; connect = [ node1 node2 ]
-  Matrix coords(rank_, nnod_);    // node coordinates; coords  = [ x[1] x[2] ], x = [x y z]'
-  IdxVector jdofs(nnod_ * rank_); // dof indices related to T
-  Vector w(nIP_);                 // Integration weights [ jw[1] jw[2] ], jw[ip] =j[ip]*w[ip]
-  Matrix h(nnod_, nIP_);          // shape functions of T; h = [h1 h2]'
-  Matrix H(rank_, nnod_ * rank_); // H matrix of T mesh
-  Matrix eps(rank_, rank_);       // strain matrix
-  Vector u_corner(rank_);         // vector of corner displacements [ux uy]
-  Vector fe(nnod_ * rank_);       // fe = w[ip]*H[ip]*u(cornerx/y)
+  // Variables related to corner displacements
+  Matrix eps(rank_, rank_); // strain matrix
+  Vector u_corner(rank_);   // vector of corner displacements [ux uy]
   voigtUtilities::voigt2TensorStrain(eps, imposedStrain_);
+
+  // Variables related to element T mesh:
+  IdxVector connect(nnod_);    // node indices; connect = [ node1 node2 ]
+  Matrix coords(rank_, nnod_); // node coordinates; coords  = [ x[1] x[2] ], x = [x y z]'
+  IdxVector jdofs(ndof_);      // dof indices related to T
+  Vector w(nIP_);              // Integration weights [ jw[1] jw[2] ], jw[ip] =j[ip]*w[ip]
+  Matrix h(nnod_, nIP_);       // shape functions of T; h = [h1 h2]'
+  Matrix H(rank_, ndof_);      // H matrix of T mesh
+  Vector fe(ndof_);            // fe = w[ip]*H[ip]*u(cornerx/y)
   H = 0.0;
 
   // Loop over faces of trNodes_
@@ -678,6 +684,5 @@ void declareLagrangePeriodicModel()
 
 {
   using jive::model::ModelFactory;
-
   ModelFactory::declare("LagPeriodicBC", &newLagrangePeriodicModel);
 }

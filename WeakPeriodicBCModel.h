@@ -118,10 +118,11 @@ private: // Private Members (internal use)
   Ref<XDofSpace> dofs_;
   Ref<Constraints> cons_;
   IdxVector U_doftypes_;      // displacement dof types
-  IdxVector T_doftypes_;      // traction dof types
+  // IdxVector T_doftypes_;      // traction dof types
   Ref<BoundaryShape> bshape_; // boundary element
   int nIP_;                   // number of int. points of boundary element
   int nnod_;                  // number of nodes of boundary element
+  int ndof_;                  // numder of dofs per boundary element
   int localrank_;             // local rank of boundary element
 
   IdxVector bndNodes_[6];   // boundary nodes [ xmin, xmax, ymin, ymax ]
@@ -129,7 +130,7 @@ private: // Private Members (internal use)
   Tuple<idx_t, 3> masters_; // corner nodes [ cornerX, cornerY, cornerZ ]
   idx_t ifixed_;            // master corner node [ corner0 ]
 
-  Vector strain_; // applied Strain
+  // Vector strain_; // applied Strain
 
   Vector imposedStrain_; // total applied strain
 
