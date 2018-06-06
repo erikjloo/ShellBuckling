@@ -59,7 +59,7 @@ LagrangePeriodicModel::LagrangePeriodicModel
      const Properties &globdat) : PeriodicBCModel::PeriodicBCModel(name, conf, props, globdat)
 {
   Properties myProps = props.getProps(myName_);
-  myProps.find(factor, COARSEN_FACTOR);
+  myProps.find(factor_, COARSEN_FACTOR);
   nodes_ = XNodeSet::find(globdat);
 }
 
@@ -105,41 +105,51 @@ bool LagrangePeriodicModel::takeAction(const String &action,
 
   if (action == Actions::GET_CONSTRAINTS)
   {
+    // System::out() << "Constraints" << endl;
     PeriodicBCModel::fixCorner_();
     if (strainType_ != Free)
       PeriodicBCModel::applyStrain_(imposedStrain_);
     return true;
   }
 
-  if (action == Actions::GET_EXT_VECTOR)
+  // if (action == Actions::GET_EXT_VECTOR)
+  // {
+  //   // System::out() << "Get Ext Vector" << endl;
+  //   // Get the current displacements.
+  //   Vector disp;
+  //   // idx_t jdof = dofs_->getDofIndex(15, dofTypes_[0]);
+  //   // System::out() << " disp = " << disp [jdof] << endl; 
+  //   StateVector::get(disp, dofs_, globdat);
+
+  //   // Get the external force vector
+  //   Vector fint;
+  //   params.get(fint, ActionParams::EXT_VECTOR);
+
+  //   // Augment and return fint
+  //   augmentfint_(fint, disp);
+  //   // System::out() << "fint = "<< fint << endl;
+  //   return true;
+  // }
+
+  if (action == Actions::GET_MATRIX0 || action == Actions::GET_INT_VECTOR)
   {
-    // Get the current displacements.
+    // System::out() << "Get Matrix 0" << endl;
+    Ref<MatrixBuilder> mbuilder;
     Vector disp;
-    StateVector::get(disp, dofs_, globdat);
-
-    // Get the external force vector
-    Vector fext;
-    params.get(fext, ActionParams::EXT_VECTOR);
-
-    // Augment and return fext
-    augmentFext_(fext, disp);
-    return true;
-  }
-
-  if (action == Actions::GET_MATRIX0)
-  {
+    Vector fint;
+    
     // Get the current displacements.
-    Vector disp;
+    
     StateVector::get(disp, dofs_, globdat);
 
     // Get the matrix builder and the internal force vector.
-    Vector fint;
-    Ref<MatrixBuilder> mbuilder;
+    
     params.get(fint, ActionParams::INT_VECTOR);
     params.find(mbuilder, ActionParams::MATRIX0);
 
-    // Augment K0 and return fint
     augmentMatrix_(mbuilder, fint, disp);
+    // augmentFint_(mbuilder, fint, disp);
+    // System::out() << "fint = " << fint << endl;
     return true;
   }
   
@@ -185,7 +195,7 @@ void LagrangePeriodicModel::init_(const Properties &globdat)
     NodeGroup edge = NodeGroup::get(PBCGroupInputModule::EDGES[face], nodes_, globdat, getContext());
     bndNodes_[face].ref(edge.getIndices());
   }
-  System::warn() << "bndNodes = [xmin, xmax, ymin, ymax] = \n";
+  System::out() << "bndNodes = [xmin, xmax, ymin, ymax] = \n";
   sortBndNodes_();
 
   // Get specimen dimensions
@@ -196,18 +206,19 @@ void LagrangePeriodicModel::init_(const Properties &globdat)
     box_[ix * 2 + 1] = coords(ix, bndNodes_[ix * 2 + 1][0]);
     dx_[ix] = box_[ix * 2 + 1] - box_[ix * 2];
   }
-  System::warn() << "box_ = " << box_ << "\n";
-  System::warn() << "dx_ = " << dx_ << "\n";
+  System::out() << "box_ = " << box_ << "\n";
+  System::out() << "dx_ = " << dx_ << "\n";
 
   // Find corner nodes
   ifixed_ = NodeGroup::get(PBCGroupInputModule::CORNERS[0], nodes_, globdat, getContext()).getIndices()[0];
-  System::warn() << "ifixed_ = Corner0 = " << ifixed_ << "\n";
+  System::out() << "ifixed_ = Corner0 = " << ifixed_ << "\n";
   for (idx_t i = 0; i < rank_; ++i)
     masters_[i] = NodeGroup::get(PBCGroupInputModule::CORNERS[i + 1], nodes_, globdat, getContext()).getIndices()[0];
-  System::warn() << "masters_ = [CornerX, CornerY] = " << masters_ << "\n";
+  System::out() << "masters_ = [CornerX, CornerY] = " << masters_ << "\n";
 
   // Create traction mesh
-  System::warn() << " trNodes_ = [xmin, ymin] = \n";
+  System::out() << " trNodes_ = [xmin, ymin] = \n";
+  findSmallestElement_();
   createTractionMesh_();
 
   // Create boundary element
@@ -235,7 +246,7 @@ void LagrangePeriodicModel::sortBndNodes_()
     // Perform bubblesort on bndNodes_[face]
     sortBndFace_(bndNodes_[face], index);
     // Print to verify
-    System::warn() << " bndNodes_[" << face << "] = " << bndNodes_[face] << '\n';
+    System::out() << " bndNodes_[" << face << "] = " << bndNodes_[face] << '\n';
   }
 }
 
@@ -257,9 +268,10 @@ void LagrangePeriodicModel::sortBndFace_(T &bndFace, const idx_t &index)
       // Get nodal coordinatess
       nodes_.getNodeCoords(c0, bndFace[jn]);
       nodes_.getNodeCoords(c1, bndFace[jn + 1]);
+      
+      // Swap indices if necessary
       if (c0[index] > c1[index])
       {
-        // Swap indices without creating a new temp variable
         bndFace[jn + 1] = bndFace[jn] + bndFace[jn + 1]; // b = a+b
         bndFace[jn] = bndFace[jn + 1] - bndFace[jn];     // a = (a+b)-a = b
         bndFace[jn + 1] = bndFace[jn + 1] - bndFace[jn]; // b = (a+b)-b = a
@@ -269,15 +281,11 @@ void LagrangePeriodicModel::sortBndFace_(T &bndFace, const idx_t &index)
 }
 
 //-----------------------------------------------------------------------
-//   createTractionMesh_
+//   findSmallestElement_
 //-----------------------------------------------------------------------
 
-void LagrangePeriodicModel::createTractionMesh_()
+void LagrangePeriodicModel::findSmallestElement_()
 {
-  //---------------------------------------------------------------------------
-  // Part 1: Find the smallest element dimensions along the x and y coordinates
-  //---------------------------------------------------------------------------
-
   Vector c0(3);       // coordinate vector of node "0"
   Vector c1(3);       // coordinate vector of node "1"
   double dx;          // dimensions of current element
@@ -292,27 +300,26 @@ void LagrangePeriodicModel::createTractionMesh_()
     // Get correct index
     idx_t index = ((ix == 0) ? 1 : 0);
 
-    // Assign bndNodes_[face] to bndFace
-    IdxVector bndFace(bndNodes_[face]);
-
     // Loop over indices of bndFace
-    for (idx_t in = 0; in < bndFace.size() - 1; ++in)
+    for (idx_t in = 0; in < bndNodes_[face].size() - 1; ++in)
     {
       // Get nodal coordinates
-      nodes_.getNodeCoords(c0, bndFace[in]);
-      nodes_.getNodeCoords(c1, bndFace[in + 1]);
+      nodes_.getNodeCoords(c0, bndNodes_[face][in]);
+      nodes_.getNodeCoords(c1, bndNodes_[face][in + 1]);
 
       // Calculate dx and compare to dx0
       dx = c1[index] - c0[index];
       dx0_[index] = ((dx < dx0_[index]) ? dx : dx0_[index]);
     }
   }
+}
 
-  //---------------------------------------------------------------------------
-  // Part 2 : Map all nodes onto xmin and ymin, reorder them and coarsen the mesh
-  //---------------------------------------------------------------------------
+//-----------------------------------------------------------------------
+//   createTractionMesh_
+//-----------------------------------------------------------------------
 
-  FlexVector trFace;    // space for traction face
+void LagrangePeriodicModel::createTractionMesh_()
+{
   Vector coords(rank_); // coordinate vector
 
   // Loop over faces of trNodes_
@@ -320,48 +327,42 @@ void LagrangePeriodicModel::createTractionMesh_()
   {
     IdxVector inodes(bndNodes_[2 * ix]);     // bndFace_min
     IdxVector jnodes(bndNodes_[2 * ix + 1]); // bndFace_max
-    trFace.resize(inodes.size() + jnodes.size());
+    trNodes_[ix].resize(inodes.size() + jnodes.size());
 
     // Loop over indices of inodes
-    idx_t jn = 0;
+    idx_t kn = 0;
     for (idx_t in = 0; in < inodes.size(); ++in)
     {
       nodes_.getNodeCoords(coords, inodes[in]);
-      trFace[jn++] = nodes_.addNode(coords);
+      trNodes_[ix][kn++] = nodes_.addNode(coords);
     }
 
     // Loop over indices of jnodes
-    for (idx_t in = 0; in < jnodes.size(); ++in)
+    for (idx_t jn = 0; jn < jnodes.size(); ++jn)
     {
-      nodes_.getNodeCoords(coords, jnodes[in]);
+      nodes_.getNodeCoords(coords, jnodes[jn]);
       coords[ix] = box_[2 * ix];
-      trFace[jn++] = nodes_.addNode(coords);
+      trNodes_[ix][kn++] = nodes_.addNode(coords);
     }
 
     // Get correct index
     idx_t index = ((ix == 0) ? 1 : 0);
 
     // Sorting trFace (works only for 2D)
-    sortBndFace_(trFace, index);
+    sortBndFace_(trNodes_[ix], index);
 
     // Coarsen the mesh (works only for 2D)
-    coarsenMesh_(trFace);
-
-    // Assign trFace to trNodes_[ix]
-    trNodes_[ix] = trFace;
+    coarsenMesh_(trNodes_[ix], index);
 
     // Print to verify
-    System::warn() << "trNodes_[" << ix << "] = " << trNodes_[ix] << "\n";
+    System::out() << "trNodes_[" << ix << "] = " << trNodes_[ix] << "\n";
   }
 
   // Add dofs to traction mesh
   for (idx_t ix = 0; ix < rank_; ++ix)
   {
-    FlexVector trFace(trNodes_[ix]);
-    for (idx_t in = 0; in < trFace.size(); ++in)
-    {
-      dofs_->addDofs(trFace[in], dofTypes_);
-    }
+    for (idx_t in = 0; in < trNodes_[ix].size(); ++in)
+      dofs_->addDofs(trNodes_[ix][in], dofTypes_);
   }
 }
 
@@ -369,16 +370,16 @@ void LagrangePeriodicModel::createTractionMesh_()
 //   coarsenMesh_
 //-----------------------------------------------------------------------
 
-void LagrangePeriodicModel::coarsenMesh_(FlexVector &trFace)
+void LagrangePeriodicModel::coarsenMesh_(FlexVector &trFace,const idx_t &index)
 {
   using jem::numeric::norm2;
-
-  double dx = (dx0_[0] + dx0_[1]) / (2 * factor);
 
   Vector c0(3); // coordinate vector of node "0"
   Vector c1(3); // coordinate vector of node "1"
   Vector cn(3); // coordinate vector of node "n"
   nodes_.getNodeCoords(cn, trFace.back());
+  double dx = (dx0_[0] + dx0_[1]) / (2 * factor_);
+  // double dx = dx0_[index]/factor_;
 
   // Loop over indices of trFace
   int jn = 0;
@@ -389,7 +390,7 @@ void LagrangePeriodicModel::coarsenMesh_(FlexVector &trFace)
     nodes_.getNodeCoords(c1, trFace[jn + 1]);
 
     // Delete indices until c1 - c0 > dx
-    while (norm2(c0 - c1) < dx && jn < trFace.size())
+    while (norm2(c0 - c1) < dx)
     {
       // Delete current node index
       trFace.erase(in + 1);
@@ -425,15 +426,12 @@ void LagrangePeriodicModel::getTractionMeshNodes_(IdxVector &connect,
   // Implementation for two dimensions
   if (rank_ == 2)
   {
-    // Assign trNodes_[ix] to trFace
-    FlexVector trFace(trNodes_[ix]);
-
     // Loop over indices of trFace
-    for (idx_t in = 0; in < trFace.size() - 1; ++in)
+    for (idx_t in = 0; in < trNodes_[ix].size() - 1; ++in)
     {
       // get coords of nodes in trFace[in:in+2]
-      connect[0] = trFace[in];
-      connect[1] = trFace[in + 1];
+      connect[0] = trNodes_[ix][in];
+      connect[1] = trNodes_[ix][in + 1];
       nodes_.getSomeCoords(coords, connect);
 
       // Get correct index
@@ -442,7 +440,6 @@ void LagrangePeriodicModel::getTractionMeshNodes_(IdxVector &connect,
       // Check if c0[index] < x[index] < c1[index]
       if ((coords(index, 0) < x[index]) && (x[index] < coords(index, 1)))
       {
-        // System::warn() << coords(index, 0) << " < " << x[index] << " < " << coords(index, 1) << "\n";
         break;
       }
     }
@@ -480,8 +477,6 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
                                            const Vector &fint,
                                            const Vector &disp)
 {
-  System::warn() << "Augmenting Matrix !!\n";
-
   // Variables related to both U mesh and T mesh:
   IdxVector connect(nnod_);    // node indices = [ node1 node2 ]
   Matrix coords(rank_, nnod_); // node coordinates = [ x[1] x[2] ], x = [x y z]'
@@ -511,20 +506,17 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
   // Loop over faces of bndNodes_
   for (idx_t face = 0; face < 2 * rank_; ++face)
   {
-    // Assign bndNodes_[face] to bndFace
-    IdxVector bndFace(bndNodes_[face]);
-
     // Loop over indices of bndFace
-    for (idx_t in = 0; in < bndFace.size() - 1; ++in)
+    for (idx_t in = 0; in < bndNodes_[face].size() - 1; ++in)
     {
       // Get idofs and w from U-mesh
-      connect[0] = bndFace[in];
-      connect[1] = bndFace[in + 1];
-      dofs_->getDofIndices(idofs, connect, dofTypes_);
+      connect[0] = bndNodes_[face][in];
+      connect[1] = bndNodes_[face][in + 1];
       nodes_.getSomeCoords(coords, connect);
       bshape_->getIntegrationWeights(w, coords);
-      n = bshape_->getShapeFunctions();
+      dofs_->getDofIndices(idofs, connect, dofTypes_);
       bshape_->getGlobalIntegrationPoints(X, coords);
+      n = bshape_->getShapeFunctions();
 
       // Get jdofs from T-mesh
       getTractionMeshNodes_(connect, X(ALL, 0), face);
@@ -544,7 +536,7 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
         H(0, 0) = H(1, 1) = h[0];
         H(0, 2) = H(1, 3) = h[1];
 
-        // Assemble Ke =
+        // Assemble Ke
         if (face == 0 || face == 2 || face == 4)
           Ke -= w[ip] * matmul(N.transpose(), H);
         else if (face == 1 || face == 3 || face == 5)
@@ -562,67 +554,40 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
       // Assemble U-mesh fe
       tr = select(disp, jdofs);
       fe = matmul(Ke, tr);
-
-      // Add fe to fint[idofs]
-      // System::warn() << fe << " \n";
       select(fint, idofs) += fe;
 
       // Assemble T-mesh fe
       u = select(disp, idofs);
       fe = matmul(KeT, u);
-
-      // Add fe to fint[jdofs]
       select(fint, jdofs) += fe;
     }
   }
-  System::warn() << fint << " \n";
-}
-
-//-----------------------------------------------------------------------
-//   augmentFext_
-//-----------------------------------------------------------------------
-
-void LagrangePeriodicModel::augmentFext_(const Vector &fext, const Vector &disp)
-{
-  System::warn() << "Augmenting fext !!\n";
 
   // Variables related to corner displacements
   Matrix eps(rank_, rank_); // strain matrix
   Vector u_corner(rank_);   // vector of corner displacements [ux uy]
   voigtUtilities::voigt2TensorStrain(eps, imposedStrain_);
 
-  // Variables related to element T mesh:
-  IdxVector connect(nnod_);    // node indices; connect = [ node1 node2 ]
-  Matrix coords(rank_, nnod_); // node coordinates; coords  = [ x[1] x[2] ], x = [x y z]'
-  IdxVector jdofs(ndof_);      // dof indices related to T
-  Vector w(nIP_);              // Integration weights [ jw[1] jw[2] ], jw[ip] =j[ip]*w[ip]
-  Matrix h(nnod_, nIP_);       // shape functions of T; h = [h1 h2]'
-  Matrix H(rank_, ndof_);      // H matrix of T mesh
-  Vector fe(ndof_);            // fe = w[ip]*H[ip]*u(cornerx/y)
-  H = 0.0;
+  Matrix Ht(ndof_, rank_);
 
   // Loop over faces of trNodes_
   for (idx_t ix = 0; ix < rank_; ++ix)
   {
-    // Obtain u_corner from applied strain
+
+    // Obtain u_corner
+    IdxVector idofs(rank_);
+    dofs_->getDofIndices(idofs, masters_[ix], dofTypes_);
+    u_corner = disp[idofs];
+
     for (idx_t jx = 0; jx < rank_; ++jx)
     {
       idx_t ivoigt = voigtUtilities::voigtIndex(ix, jx, rank_);
       if (strainFunc_[ivoigt] != NIL)
       {
-        u_corner[jx] = dx_[ix] * eps(ix, jx);
-      }
-      else
-      {
-        idx_t idof = dofs_->getDofIndex(masters_[ix], dofTypes_[jx]);
-        u_corner[jx] = disp[idof];
+        u_corner[jx] = eps(ix, jx) * dx_[ix];
       }
     }
-
-    System::warn() << " On face " << ix << "： \n";
-    System::warn() << " strain = " << imposedStrain_ << "\n";
-    System::warn() << " u_corner = " << u_corner << "\n";
-
+    
     // Assign trNodes_[ix] to trFace
     FlexVector trFace(trNodes_[ix]);
 
@@ -633,26 +598,38 @@ void LagrangePeriodicModel::augmentFext_(const Vector &fext, const Vector &disp)
       // Get jdofs, w and H from traction mesh
       connect[0] = trFace[jn];
       connect[1] = trFace[jn + 1];
-      dofs_->getDofIndices(jdofs, connect, dofTypes_);
       nodes_.getSomeCoords(coords, connect);
       bshape_->getIntegrationWeights(w, coords);
-      h = bshape_->getShapeFunctions();
+      dofs_->getDofIndices(jdofs, connect, dofTypes_);
+      n = bshape_->getShapeFunctions();
 
-      fe = 0.0;
+      Ht = 0.0;
       for (idx_t ip = 0; ip < nIP_; ip++)
       {
         // Assemble H matrix
-        H(0, 0) = H(1, 1) = h(0, ip);
-        H(0, 2) = H(1, 3) = h(1, ip);
+        H(0, 0) = H(1, 1) = n(0, ip);
+        H(0, 2) = H(1, 3) = n(1, ip);
 
-        // Assemble fe
-        fe += w[ip] * matmul(H.transpose(), u_corner);
-        System::warn() << "fe = " << fe << "\n";
+        // Assemble Ht
+        Ht -= w[ip] * H.transpose();
       }
-      jn += 1;
 
-      // Add fe to fext
-      select(fext, jdofs) = fe;
+      // Add Ht to mbuilder
+      if (mbuilder != NIL)
+      {
+        mbuilder->addBlock(jdofs, idofs, Ht);
+        mbuilder->addBlock(idofs, jdofs, Ht.transpose());
+      }
+
+      // Assemble U-mesh fe
+      tr = select(disp, jdofs);
+      select(fint, idofs) += matmul(Ht.transpose(), tr);
+
+      // Assemble T-mesh fe
+      fe = matmul(Ht, u_corner);
+      select(fint, jdofs) += fe;
+
+      jn += 1;
     }
   }
 }

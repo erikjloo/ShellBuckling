@@ -1,3 +1,12 @@
+/*
+ *
+ * A model to impose weak periodic boundary 
+ * conditions on the 2D unit cells.
+ *
+ * Erik Giesen Loo, April 2018
+ *
+ */
+
 #ifndef LAG_PERIODICBC_MODEL_H
 #define LAG_PERIODICBC_MODEL_H
 
@@ -18,15 +27,15 @@ using jive::fem::XNodeSet;
 using jive::geom::BoundaryLine2;
 using jive::geom::BoundaryShape;
 
+//=========================================================
+//    class LagrangePeriodicBCModel
+//=========================================================
+
 class LagrangePeriodicModel : public PeriodicBCModel
 {
   public:
-    // typedef PeriodicBCModel Self;
-    // typedef Model Super;
     typedef Flex<idx_t> FlexVector;
     typedef Flex<idx_t>::Iterator Iter;
-    // typedef Array<Ref<Function>, 1> FuncVector;
-
     static const char *COARSEN_FACTOR;
 
     LagrangePeriodicModel
@@ -46,13 +55,13 @@ class LagrangePeriodicModel : public PeriodicBCModel
     virtual ~LagrangePeriodicModel();
 
     void init_(const Properties &globdat);
-
     void sortBndNodes_();
     template <typename T>
     void sortBndFace_(T &bndFace, const idx_t &index);
+    void findSmallestElement_();
     void createTractionMesh_();
-    void coarsenMesh_(FlexVector &trFace);
-    void augmentFext_(const Vector &fext, const Vector &disp);
+    void coarsenMesh_(FlexVector &trFace, const idx_t &index);
+    void augmentFint_(Ref<MatrixBuilder> mbuilder, const Vector &fint, const Vector &disp);
     void augmentMatrix_(Ref<MatrixBuilder> mbuilder, const Vector &fint, const Vector &disp);
     void getTractionMeshNodes_(IdxVector &connect, const Vector &x, const idx_t &face);
 
@@ -69,7 +78,9 @@ class LagrangePeriodicModel : public PeriodicBCModel
 
     Vector box_;   // specimen coordinates
     Vector dx0_;   // smallest element dimensions
-    double factor; // coarsening factor
+    double factor_; // coarsening factor
+
+    IdxVector trdofs_; // debugging vector
 };
 
 #endif
