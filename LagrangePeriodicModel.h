@@ -61,7 +61,6 @@ class LagrangePeriodicModel : public PeriodicBCModel
     void findSmallestElement_();
     void createTractionMesh_();
     void coarsenMesh_(FlexVector &trFace, const idx_t &index);
-    void augmentFint_(Ref<MatrixBuilder> mbuilder, const Vector &fint, const Vector &disp);
     void augmentMatrix_(Ref<MatrixBuilder> mbuilder, const Vector &fint, const Vector &disp);
     void getTractionMeshNodes_(IdxVector &connect, const Vector &x, const idx_t &face);
 

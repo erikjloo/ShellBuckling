@@ -104,9 +104,9 @@ private: // Private Methods (internal use)
   void sortBndNodes_();
   template <typename T>
   void sortBndFace_(T &bndFace, const idx_t &index);
+  void findSmallestElement_();
   void createTractionMesh_();
-  void coarsenMesh_(FlexVector &trFace);
-  void augmentFext_(const Vector &fext, const Vector &disp);
+  void coarsenMesh_(FlexVector &trFace, const idx_t &index);
   void augmentMatrix_(Ref<MatrixBuilder> mbuilder, const Vector &fint, const Vector &disp);
   void getTractionMeshNodes_(IdxVector &connect, const Vector &x, const idx_t &face);
 
@@ -117,8 +117,8 @@ private: // Private Members (internal use)
 
   Ref<XDofSpace> dofs_;
   Ref<Constraints> cons_;
-  IdxVector U_doftypes_;      // displacement dof types
-  // IdxVector T_doftypes_;      // traction dof types
+  IdxVector dofTypes_;      // displacement dof types
+
   Ref<BoundaryShape> bshape_; // boundary element
   int nIP_;                   // number of int. points of boundary element
   int nnod_;                  // number of nodes of boundary element
@@ -141,7 +141,7 @@ private: // Private Members (internal use)
   Vector box_;   // specimen coordinates
   Vector dx_;    // specimen dimensions
   Vector dx0_;   // smallest element dimensions
-  double factor; // coarsening factor
+  double factor_; // coarsening factor
 
   String strainFile_;
   StrainType strainType_;

@@ -105,35 +105,14 @@ bool LagrangePeriodicModel::takeAction(const String &action,
 
   if (action == Actions::GET_CONSTRAINTS)
   {
-    // System::out() << "Constraints" << endl;
     PeriodicBCModel::fixCorner_();
     if (strainType_ != Free)
       PeriodicBCModel::applyStrain_(imposedStrain_);
     return true;
   }
 
-  // if (action == Actions::GET_EXT_VECTOR)
-  // {
-  //   // System::out() << "Get Ext Vector" << endl;
-  //   // Get the current displacements.
-  //   Vector disp;
-  //   // idx_t jdof = dofs_->getDofIndex(15, dofTypes_[0]);
-  //   // System::out() << " disp = " << disp [jdof] << endl; 
-  //   StateVector::get(disp, dofs_, globdat);
-
-  //   // Get the external force vector
-  //   Vector fint;
-  //   params.get(fint, ActionParams::EXT_VECTOR);
-
-  //   // Augment and return fint
-  //   augmentfint_(fint, disp);
-  //   // System::out() << "fint = "<< fint << endl;
-  //   return true;
-  // }
-
   if (action == Actions::GET_MATRIX0 || action == Actions::GET_INT_VECTOR)
   {
-    // System::out() << "Get Matrix 0" << endl;
     Ref<MatrixBuilder> mbuilder;
     Vector disp;
     Vector fint;
@@ -148,8 +127,6 @@ bool LagrangePeriodicModel::takeAction(const String &action,
     params.find(mbuilder, ActionParams::MATRIX0);
 
     augmentMatrix_(mbuilder, fint, disp);
-    // augmentFint_(mbuilder, fint, disp);
-    // System::out() << "fint = " << fint << endl;
     return true;
   }
   
@@ -493,7 +470,7 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
   IdxVector jdofs(ndof_); // dof indices related to T
   Vector xi(localrank_);  // local coordinates of given X[ip]; u = xi
   Vector h(nnod_);        // shape functions of T; h = [h1 h2]'
-  Matrix H(rank_, ndof_); // H matrix of T mesh [h1 0 h2 0l 0 h1 0 h2]
+  Matrix H(rank_, ndof_); // H matrix of T mesh [h1 0 h2 0; 0 h1 0 h2]
   H = 0.0;
 
   // Matrices and vector to be assembled:
@@ -567,8 +544,7 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
   Matrix eps(rank_, rank_); // strain matrix
   Vector u_corner(rank_);   // vector of corner displacements [ux uy]
   voigtUtilities::voigt2TensorStrain(eps, imposedStrain_);
-
-  Matrix Ht(ndof_, rank_);
+  Matrix Ht(ndof_, rank_);  // 'transpose' of H matrix
 
   // Loop over faces of trNodes_
   for (idx_t ix = 0; ix < rank_; ++ix)
@@ -583,21 +559,15 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
     {
       idx_t ivoigt = voigtUtilities::voigtIndex(ix, jx, rank_);
       if (strainFunc_[ivoigt] != NIL)
-      {
         u_corner[jx] = eps(ix, jx) * dx_[ix];
-      }
     }
     
-    // Assign trNodes_[ix] to trFace
-    FlexVector trFace(trNodes_[ix]);
-
     // Loop over indices of trFace
-    int jn = 0;
-    for (Iter in = trFace.begin(); in < trFace.end() - 1; ++in)
+    for (idx_t jn = 0; jn < trNodes_[ix].size() - 1; ++jn)
     {
       // Get jdofs, w and H from traction mesh
-      connect[0] = trFace[jn];
-      connect[1] = trFace[jn + 1];
+      connect[0] = trNodes_[ix][jn];
+      connect[1] = trNodes_[ix][jn + 1];
       nodes_.getSomeCoords(coords, connect);
       bshape_->getIntegrationWeights(w, coords);
       dofs_->getDofIndices(jdofs, connect, dofTypes_);
@@ -623,13 +593,13 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
 
       // Assemble U-mesh fe
       tr = select(disp, jdofs);
-      select(fint, idofs) += matmul(Ht.transpose(), tr);
+      fe = matmul(Ht.transpose(), tr);
+      select(fint, idofs) += fe;
 
       // Assemble T-mesh fe
       fe = matmul(Ht, u_corner);
       select(fint, jdofs) += fe;
 
-      jn += 1;
     }
   }
 }
