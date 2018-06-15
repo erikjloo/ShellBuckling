@@ -59,7 +59,10 @@ LagrangePeriodicModel::LagrangePeriodicModel
      const Properties &globdat) : PeriodicBCModel::PeriodicBCModel(name, conf, props, globdat)
 {
   Properties myProps = props.getProps(myName_);
-  myProps.find(factor_, COARSEN_FACTOR);
+  Properties myConf = conf.makeProps(myName_);
+
+  myProps.get(factor_, COARSEN_FACTOR);
+  myConf.set(COARSEN_FACTOR, factor_);
   nodes_ = XNodeSet::find(globdat);
 }
 
@@ -415,12 +418,14 @@ void LagrangePeriodicModel::getTractionMeshNodes_(IdxVector &connect,
       idx_t index = ((ix == 0) ? 1 : 0);
 
       // Check if c0[index] < x[index] < c1[index]
-      if ((coords(index, 0) < x[index]) && (x[index] < coords(index, 1)))
+      if ((coords(index, 0) <= x[index]) && (x[index] <= coords(index, 1)))
       {
-        break;
+        return;
       }
     }
   }
+
+  throw jem::Error ( JEM_FUNC, "nodes not found" );
   // Implementation for three dimensions
   // if (rank_ == 3)
   // IdxVector trFace(trElems_[ix]);
@@ -477,7 +482,7 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
   Vector tr(ndof_);         // Vector of tractions of each element
   Vector u(ndof_);          // Vector of displacements of each element
   Matrix Ke(ndof_, ndof_);  // Ke = w[ip]*N[ip]*H[ip]
-  Matrix KeT(ndof_, ndof_); // Ke = w[ip]*H[ip]*N[ip]
+  Matrix KeT(ndof_, ndof_); // KeT = w[ip]*H[ip]*N[ip]
   Vector fe(ndof_);         // fe = Ke*t or KeT*u
 
   // Loop over faces of bndNodes_
@@ -495,56 +500,61 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
       bshape_->getGlobalIntegrationPoints(X, coords);
       n = bshape_->getShapeFunctions();
 
-      // Get jdofs from T-mesh
-      getTractionMeshNodes_(connect, X(ALL, 0), face);
-      dofs_->getDofIndices(jdofs, connect, dofTypes_);
-      nodes_.getSomeCoords(coords, connect);
-
-      Ke = 0.0;
       for (idx_t ip = 0; ip < nIP_; ip++)
       {
+        // Get jdofs from T-mesh
+        getTractionMeshNodes_(connect, X[ip], face);
+        dofs_->getDofIndices(jdofs, connect, dofTypes_);
+        nodes_.getSomeCoords(coords, connect);
+
         // Get N-matrix from U-mesh
         N(0, 0) = N(1, 1) = n(0, ip);
         N(0, 2) = N(1, 3) = n(1, ip);
 
         // Get H-matrix from T-mesh
-        bshape_->getLocalPoint(xi, X(ALL, ip), 0.1, coords);
+        bshape_->getLocalPoint(xi, X[ip], 0.1, coords);
         bshape_->evalShapeFunctions(h, xi);
         H(0, 0) = H(1, 1) = h[0];
         H(0, 2) = H(1, 3) = h[1];
 
         // Assemble Ke
         if (face == 0 || face == 2 || face == 4)
-          Ke -= w[ip] * matmul(N.transpose(), H);
+          Ke = - w[ip] * matmul(N.transpose(), H);
         else if (face == 1 || face == 3 || face == 5)
-          Ke += w[ip] * matmul(N.transpose(), H);
+          Ke = + w[ip] * matmul(N.transpose(), H);
+
+        // Add Ke and KeT to mbuilder
+        KeT = Ke.transpose();
+        if (mbuilder != NIL)
+        {
+          mbuilder->addBlock(idofs, jdofs, Ke);
+          mbuilder->addBlock(jdofs, idofs, KeT);
+        }
+
+        // Assemble U-mesh fe
+        tr = select(disp, jdofs);
+        fe = matmul(Ke, tr);
+        select(fint, idofs) += fe;
+
+        // Assemble T-mesh fe
+        u = select(disp, idofs);
+        fe = matmul(KeT, u);
+        select(fint, jdofs) += fe;
       }
-
-      // Add Ke and KeT to mbuilder
-      KeT = Ke.transpose();
-      if (mbuilder != NIL)
-      {
-        mbuilder->addBlock(idofs, jdofs, Ke);
-        mbuilder->addBlock(jdofs, idofs, KeT);
-      }
-
-      // Assemble U-mesh fe
-      tr = select(disp, jdofs);
-      fe = matmul(Ke, tr);
-      select(fint, idofs) += fe;
-
-      // Assemble T-mesh fe
-      u = select(disp, idofs);
-      fe = matmul(KeT, u);
-      select(fint, jdofs) += fe;
     }
   }
 
   // Variables related to corner displacements
   Matrix eps(rank_, rank_); // strain matrix
-  Vector u_corner(rank_);   // vector of corner displacements [ux uy]
+  Vector u_corner(rank_);
+  Vector u_fixed(rank_);
+  Matrix Ht(ndof_, rank_);
   voigtUtilities::voigt2TensorStrain(eps, imposedStrain_);
-  Matrix Ht(ndof_, rank_);  // 'transpose' of H matrix
+  // bool prescribed = false;
+
+  IdxVector kdofs(rank_);
+  dofs_->getDofIndices(kdofs, ifixed_, dofTypes_);
+  u_fixed = disp[kdofs];
 
   // Loop over faces of trNodes_
   for (idx_t ix = 0; ix < rank_; ++ix)
@@ -555,12 +565,14 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
     dofs_->getDofIndices(idofs, masters_[ix], dofTypes_);
     u_corner = disp[idofs];
 
-    for (idx_t jx = 0; jx < rank_; ++jx)
-    {
-      idx_t ivoigt = voigtUtilities::voigtIndex(ix, jx, rank_);
-      if (strainFunc_[ivoigt] != NIL)
-        u_corner[jx] = eps(ix, jx) * dx_[ix];
-    }
+    // for (idx_t jx = 0; jx < rank_; ++jx)
+    // {
+    //   idx_t ivoigt = voigtUtilities::voigtIndex(ix, jx, rank_);
+    //   if (strainFunc_[ivoigt] != NIL)
+    //   {
+    //     u_corner[jx] = eps(ix, jx) * dx_[ix];
+    //   }
+    // }
     
     // Loop over indices of trFace
     for (idx_t jn = 0; jn < trNodes_[ix].size() - 1; ++jn)
@@ -573,34 +585,36 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
       dofs_->getDofIndices(jdofs, connect, dofTypes_);
       n = bshape_->getShapeFunctions();
 
-      Ht = 0.0;
       for (idx_t ip = 0; ip < nIP_; ip++)
       {
         // Assemble H matrix
         H(0, 0) = H(1, 1) = n(0, ip);
         H(0, 2) = H(1, 3) = n(1, ip);
+        H = w[ip] * H;
+        Ht = H.transpose();
 
-        // Assemble Ht
-        Ht -= w[ip] * H.transpose();
+        // Add H  and Ht to mbuilder
+        if (mbuilder != NIL)
+        {
+          // mbuilder->addBlock(kdofs, jdofs, H);
+          // mbuilder->addBlock(jdofs, kdofs, Ht);
+          
+          H = -H;
+          Ht = -Ht;
+          mbuilder->addBlock(idofs, jdofs, H);
+          mbuilder->addBlock(jdofs, idofs, Ht);
+
+          // Assemble U-mesh fe
+          tr = select(disp, jdofs);
+          select(fint, idofs) += matmul(H, tr);
+          select(fint, kdofs) -= matmul(H, tr);
+
+          // Assemble T-mesh fe
+          select(fint, jdofs) += matmul(Ht, u_corner);
+          // select(fint, jdofs) -= matmul(Ht, u_fixed);
+        }
       }
-
-      // Add Ht to mbuilder
-      if (mbuilder != NIL)
-      {
-        mbuilder->addBlock(jdofs, idofs, Ht);
-        mbuilder->addBlock(idofs, jdofs, Ht.transpose());
-      }
-
-      // Assemble U-mesh fe
-      tr = select(disp, jdofs);
-      fe = matmul(Ht.transpose(), tr);
-      select(fint, idofs) += fe;
-
-      // Assemble T-mesh fe
-      fe = matmul(Ht, u_corner);
-      select(fint, jdofs) += fe;
-
-    }
+    } 
   }
 }
 
