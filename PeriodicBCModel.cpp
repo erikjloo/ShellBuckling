@@ -371,10 +371,6 @@ void PeriodicBCModel::applyStrain_(const Vector &strain) const
   Matrix eps(rank_, rank_);
   voigtUtilities::voigt2TensorStrain(eps, strain);
 
-  System::warn() << " Applying constraints \n";
-  System::warn() << " strain = " << strain << "\n";
-  System::warn() << " eps = " << eps << "\n";
-  
   for (idx_t i = 0; i < rank_; ++i)
   {
     for (idx_t j = 0; j < rank_; ++j)

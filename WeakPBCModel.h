@@ -33,53 +33,52 @@ using jive::geom::BoundaryShape;
 
 class WeakPBCModel : public PeriodicBCModel
 {
-  public:
-    typedef Flex<idx_t> FlexVector;
-    typedef Flex<idx_t>::Iterator Iter;
-    static const char *COARSEN_FACTOR;
+public:
+  typedef Flex<idx_t> FlexVector;
+  typedef Flex<idx_t>::Iterator Iter;
+  static const char *COARSEN_FACTOR;
 
-    WeakPBCModel
+  WeakPBCModel
 
-        (const String &name,
-         const Properties &conf,
-         const Properties &props,
-         const Properties &globdat);
+      (const String &name,
+       const Properties &conf,
+       const Properties &props,
+       const Properties &globdat);
 
-    virtual bool takeAction
+  virtual bool takeAction
 
-        (const String &action,
-         const Properties &params,
-         const Properties &globdat);
+      (const String &action,
+       const Properties &params,
+       const Properties &globdat);
 
-  protected:
-    virtual ~WeakPBCModel();
+protected:
+  virtual ~WeakPBCModel();
 
-    void init_(const Properties &globdat);
-    void sortBndNodes_();
-    template <typename T>
-    void sortBndFace_(T &bndFace, const idx_t &index);
-    void findSmallestElement_();
-    void createTractionMesh_();
-    void coarsenMesh_(FlexVector &trFace, const idx_t &index);
-    void augmentMatrix_(Ref<MatrixBuilder> mbuilder, const Vector &fint, const Vector &disp);
-    void getTractionMeshNodes_(IdxVector &connect, const Vector &x, const idx_t &face);
+  void init_(const Properties &globdat);
+  void sortBndNodes_();
+  template <typename T>
+  void sortBndFace_(T &bndFace, const idx_t &index);
+  void findSmallestElement_();
+  void createTractionMesh_();
+  void coarsenMesh_(FlexVector &trFace, const idx_t &index);
+  void augmentMatrix_(Ref<MatrixBuilder> mbuilder, const Vector &fint, const Vector &disp);
+  void getTractionMeshNodes_(IdxVector &connect, const Vector &x, const idx_t &face);
 
-  protected:
-    Assignable<XNodeSet> nodes_;
+protected:
+  Assignable<XNodeSet> nodes_; // XNodeSet to create the traction mesh nodes
 
-    Ref<BoundaryShape> bshape_; // boundary element
-    int nIP_;                   // number of int. points of boundary element
-    int nnod_;                  // number of nodes of boundary element
-    int ndof_;                  // numder of dofs per boundary element
-    int localrank_;             // local rank of boundary element
+  Ref<BoundaryShape> bshape_; // BoundaryShape for calculating shape functions
 
-    FlexVector trNodes_[3]; // traction mesh nodes [ xmin, ymin ]
+  int nIP_;       // number of int. points associated with bshape_
+  int nnod_;      // number of nodes associated with bshape_
+  int ndof_;      // numder of dofs associated with bshape_
+  int localrank_; // number of local dimensions of bshape_
 
-    Vector box_;   // specimen coordinates
-    Vector dx0_;   // smallest element dimensions
-    double factor_; // coarsening factor
+  FlexVector trNodes_[3]; // array of flexvectors of traction mesh nodes
 
-    IdxVector trdofs_; // debugging vector
+  Vector box_;    // specimen coordinates
+  Vector dx0_;    // smallest element size per dimension
+  double factor_; // coarsening factor
 };
 
 #endif

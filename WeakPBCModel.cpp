@@ -550,7 +550,6 @@ void WeakPBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
   Vector u_fixed(rank_);
   Matrix Ht(ndof_, rank_);
   voigtUtilities::voigt2TensorStrain(eps, imposedStrain_);
-  // bool prescribed = false;
 
   IdxVector kdofs(rank_);
   dofs_->getDofIndices(kdofs, ifixed_, dofTypes_);
@@ -636,5 +635,5 @@ void declareWeakPBCModel()
 
 {
   using jive::model::ModelFactory;
-  ModelFactory::declare("LagPeriodicBC", &newWeakPBCModel);
+  ModelFactory::declare("WeakPBC", &newWeakPBCModel);
 }

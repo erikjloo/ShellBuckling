@@ -103,26 +103,27 @@ class PeriodicBCModel : public Model
         (const Properties &globdat) const;
 
   protected:
-    IdxVector dofTypes_;
 
-    Assignable<NodeSet> nodes_;
+    idx_t rank_;
     BoolVector active_;
+    Assignable<NodeSet> nodes_;
 
-    Ref<XDofSpace> dofs_;
-    Ref<Constraints> cons_;
+    Ref<XDofSpace> dofs_; // reference fo DofSpace object
+    Ref<Constraints> cons_; // reference to Constraints object
 
-    IdxVector bndNodes_[6];   // indices of boundary nodes
+    IdxVector dofTypes_; // index vector for retrieving dof indices from dofs_
+
+    IdxVector bndNodes_[6];   // array of index vectors of boundary nodes
     Tuple<idx_t, 3> masters_; // master corner nodes
-    idx_t ifixed_;
+    idx_t ifixed_; // master corner node 0
 
-    Vector imposedStrain_; //total applied strain
+    Vector imposedStrain_; // vector of applied strain
 
     double time_;
     double stepSize_;
     double maxTime_;
 
-    Vector dx_;
-    idx_t rank_;
+    Vector dx_; // specimen dimensions
 
     String strainFile_;
     StrainType strainType_;
