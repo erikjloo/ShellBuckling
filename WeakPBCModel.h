@@ -11,7 +11,7 @@
 #define LAG_PERIODICBC_MODEL_H
 
 //-----------------------------------------------------------------------
-//   class LagrangePeriodicModel
+//   class WeakPBCModel
 //-----------------------------------------------------------------------
 
 #include "PeriodicBCModel.h"
@@ -31,14 +31,14 @@ using jive::geom::BoundaryShape;
 //    class LagrangePeriodicBCModel
 //=========================================================
 
-class LagrangePeriodicModel : public PeriodicBCModel
+class WeakPBCModel : public PeriodicBCModel
 {
   public:
     typedef Flex<idx_t> FlexVector;
     typedef Flex<idx_t>::Iterator Iter;
     static const char *COARSEN_FACTOR;
 
-    LagrangePeriodicModel
+    WeakPBCModel
 
         (const String &name,
          const Properties &conf,
@@ -52,7 +52,7 @@ class LagrangePeriodicModel : public PeriodicBCModel
          const Properties &globdat);
 
   protected:
-    virtual ~LagrangePeriodicModel();
+    virtual ~WeakPBCModel();
 
     void init_(const Properties &globdat);
     void sortBndNodes_();

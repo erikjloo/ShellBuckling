@@ -23,7 +23,7 @@
 #include <jive/util/FuncUtils.h>
 #include <jive/util/Printer.h>
 
-#include "LagrangePeriodicModel.h"
+#include "WeakPBCModel.h"
 #include "models.h"
 #include "SolverNames.h"
 #include "utilities.h"
@@ -39,19 +39,19 @@ using jive::model::StateVector;
 using jive::util::FuncUtils;
 
 //=========================================================
-//    class LagrangePeriodicModel
+//    class WeakPBCModel
 //=========================================================
 //-----------------------------------------------------------------------
 //   static constants
 //-----------------------------------------------------------------------
 
-const char *LagrangePeriodicModel::COARSEN_FACTOR = "coarsenFactor";
+const char *WeakPBCModel::COARSEN_FACTOR = "coarsenFactor";
 
 //-----------------------------------------------------------------------
 //   constructor
 //-----------------------------------------------------------------------
 
-LagrangePeriodicModel::LagrangePeriodicModel
+WeakPBCModel::WeakPBCModel
 
     (const String &name,
      const Properties &conf,
@@ -70,7 +70,7 @@ LagrangePeriodicModel::LagrangePeriodicModel
 //   Destructor
 //-----------------------------------------------------------------------
 
-LagrangePeriodicModel::~LagrangePeriodicModel()
+WeakPBCModel::~WeakPBCModel()
 {
 }
 
@@ -78,7 +78,7 @@ LagrangePeriodicModel::~LagrangePeriodicModel()
 //   takeAction
 //-----------------------------------------------------------------------
 
-bool LagrangePeriodicModel::takeAction(const String &action,
+bool WeakPBCModel::takeAction(const String &action,
                                        const Properties &params,
                                        const Properties &globdat)
 {
@@ -119,20 +119,20 @@ bool LagrangePeriodicModel::takeAction(const String &action,
     Ref<MatrixBuilder> mbuilder;
     Vector disp;
     Vector fint;
-    
+
     // Get the current displacements.
-    
+
     StateVector::get(disp, dofs_, globdat);
 
     // Get the matrix builder and the internal force vector.
-    
+
     params.get(fint, ActionParams::INT_VECTOR);
     params.find(mbuilder, ActionParams::MATRIX0);
 
     augmentMatrix_(mbuilder, fint, disp);
     return true;
   }
-  
+
   if (action == SolverNames::CHECK_COMMIT)
   {
     PeriodicBCModel::checkCommit_(params, globdat);
@@ -152,7 +152,7 @@ bool LagrangePeriodicModel::takeAction(const String &action,
 //   init_
 //-----------------------------------------------------------------------
 
-void LagrangePeriodicModel::init_(const Properties &globdat)
+void WeakPBCModel::init_(const Properties &globdat)
 {
   // Get dofs and cons
   dofs_ = XDofSpace::get(nodes_.getData(), globdat);
@@ -214,7 +214,7 @@ void LagrangePeriodicModel::init_(const Properties &globdat)
 //   sortBndNodes_
 //-----------------------------------------------------------------------
 
-void LagrangePeriodicModel::sortBndNodes_()
+void WeakPBCModel::sortBndNodes_()
 {
   // Loop over faces of bndNodes_
   for (idx_t face = 0; face < 2 * rank_; ++face)
@@ -235,10 +235,10 @@ void LagrangePeriodicModel::sortBndNodes_()
 //-----------------------------------------------------------------------
 
 template <typename T>
-void LagrangePeriodicModel::sortBndFace_(T &bndFace, const idx_t &index)
+void WeakPBCModel::sortBndFace_(T &bndFace, const idx_t &index)
 {
-  Vector c0(3); // coordinate vector of node "0"
-  Vector c1(3); // coordinate vector of node "1"
+  Vector c0(rank_); // coordinate vector of node "0"
+  Vector c1(rank_); // coordinate vector of node "1"
 
   // Bubblesort algorithm
   for (idx_t in = 0; in < bndFace.size(); ++in)
@@ -248,7 +248,7 @@ void LagrangePeriodicModel::sortBndFace_(T &bndFace, const idx_t &index)
       // Get nodal coordinatess
       nodes_.getNodeCoords(c0, bndFace[jn]);
       nodes_.getNodeCoords(c1, bndFace[jn + 1]);
-      
+
       // Swap indices if necessary
       if (c0[index] > c1[index])
       {
@@ -264,10 +264,10 @@ void LagrangePeriodicModel::sortBndFace_(T &bndFace, const idx_t &index)
 //   findSmallestElement_
 //-----------------------------------------------------------------------
 
-void LagrangePeriodicModel::findSmallestElement_()
+void WeakPBCModel::findSmallestElement_()
 {
-  Vector c0(3);       // coordinate vector of node "0"
-  Vector c1(3);       // coordinate vector of node "1"
+  Vector c0(rank_);   // coordinate vector of node "0"
+  Vector c1(rank_);   // coordinate vector of node "1"
   double dx;          // dimensions of current element
   dx0_ = dx_.clone(); // smallest element dimensions
 
@@ -298,7 +298,7 @@ void LagrangePeriodicModel::findSmallestElement_()
 //   createTractionMesh_
 //-----------------------------------------------------------------------
 
-void LagrangePeriodicModel::createTractionMesh_()
+void WeakPBCModel::createTractionMesh_()
 {
   Vector coords(rank_); // coordinate vector
 
@@ -350,16 +350,16 @@ void LagrangePeriodicModel::createTractionMesh_()
 //   coarsenMesh_
 //-----------------------------------------------------------------------
 
-void LagrangePeriodicModel::coarsenMesh_(FlexVector &trFace,const idx_t &index)
+void WeakPBCModel::coarsenMesh_(FlexVector &trFace, const idx_t &index)
 {
   using jem::numeric::norm2;
 
-  Vector c0(3); // coordinate vector of node "0"
-  Vector c1(3); // coordinate vector of node "1"
-  Vector cn(3); // coordinate vector of node "n"
+  Vector c0(rank_); // coordinate vector of node "0"
+  Vector c1(rank_); // coordinate vector of node "1"
+  Vector cn(rank_); // coordinate vector of node "n"
   nodes_.getNodeCoords(cn, trFace.back());
   double dx = (dx0_[0] + dx0_[1]) / (2 * factor_);
-  // double dx = dx0_[index]/factor_;
+  // double dx = dx0_[index] / factor_;
 
   // Loop over indices of trFace
   int jn = 0;
@@ -394,7 +394,7 @@ void LagrangePeriodicModel::coarsenMesh_(FlexVector &trFace,const idx_t &index)
 //   getTractionMeshNodes_
 //-----------------------------------------------------------------------
 
-void LagrangePeriodicModel::getTractionMeshNodes_(IdxVector &connect,
+void WeakPBCModel::getTractionMeshNodes_(IdxVector &connect,
                                                   const Vector &x,
                                                   const idx_t &face)
 {
@@ -425,7 +425,7 @@ void LagrangePeriodicModel::getTractionMeshNodes_(IdxVector &connect,
     }
   }
 
-  throw jem::Error ( JEM_FUNC, "nodes not found" );
+  throw jem::Error(JEM_FUNC, "nodes not found");
   // Implementation for three dimensions
   // if (rank_ == 3)
   // IdxVector trFace(trElems_[ix]);
@@ -455,7 +455,7 @@ void LagrangePeriodicModel::getTractionMeshNodes_(IdxVector &connect,
 //   augmentMatrix_
 //-----------------------------------------------------------------------
 
-void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
+void WeakPBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
                                            const Vector &fint,
                                            const Vector &disp)
 {
@@ -519,9 +519,9 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
 
         // Assemble Ke
         if (face == 0 || face == 2 || face == 4)
-          Ke = - w[ip] * matmul(N.transpose(), H);
+          Ke = -w[ip] * matmul(N.transpose(), H);
         else if (face == 1 || face == 3 || face == 5)
-          Ke = + w[ip] * matmul(N.transpose(), H);
+          Ke = +w[ip] * matmul(N.transpose(), H);
 
         // Add Ke and KeT to mbuilder
         KeT = Ke.transpose();
@@ -565,15 +565,6 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
     dofs_->getDofIndices(idofs, masters_[ix], dofTypes_);
     u_corner = disp[idofs];
 
-    // for (idx_t jx = 0; jx < rank_; ++jx)
-    // {
-    //   idx_t ivoigt = voigtUtilities::voigtIndex(ix, jx, rank_);
-    //   if (strainFunc_[ivoigt] != NIL)
-    //   {
-    //     u_corner[jx] = eps(ix, jx) * dx_[ix];
-    //   }
-    // }
-    
     // Loop over indices of trFace
     for (idx_t jn = 0; jn < trNodes_[ix].size() - 1; ++jn)
     {
@@ -598,7 +589,7 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
         {
           // mbuilder->addBlock(kdofs, jdofs, H);
           // mbuilder->addBlock(jdofs, kdofs, Ht);
-          
+
           H = -H;
           Ht = -Ht;
           mbuilder->addBlock(idofs, jdofs, H);
@@ -614,7 +605,7 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
           // select(fint, jdofs) -= matmul(Ht, u_fixed);
         }
       }
-    } 
+    }
   }
 }
 
@@ -623,10 +614,10 @@ void LagrangePeriodicModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
 //=======================================================================
 
 //-----------------------------------------------------------------------
-//   newLagrangePeriodicModel
+//   newWeakPBCModel
 //-----------------------------------------------------------------------
 
-static Ref<Model> newLagrangePeriodicModel
+static Ref<Model> newWeakPBCModel
 
     (const String &name,
      const Properties &conf,
@@ -634,16 +625,16 @@ static Ref<Model> newLagrangePeriodicModel
      const Properties &globdat)
 
 {
-  return newInstance<LagrangePeriodicModel>(name, conf, props, globdat);
+  return newInstance<WeakPBCModel>(name, conf, props, globdat);
 }
 
 //-----------------------------------------------------------------------
-//   declareLagrangePeriodicModel
+//   declareWeakPBCModel
 //-----------------------------------------------------------------------
 
-void declareLagrangePeriodicModel()
+void declareWeakPBCModel()
 
 {
   using jive::model::ModelFactory;
-  ModelFactory::declare("LagPeriodicBC", &newLagrangePeriodicModel);
+  ModelFactory::declare("LagPeriodicBC", &newWeakPBCModel);
 }
