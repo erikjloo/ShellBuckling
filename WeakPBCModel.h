@@ -28,7 +28,7 @@ using jive::geom::BoundaryLine2;
 using jive::geom::BoundaryShape;
 
 //=========================================================
-//    class LagrangePeriodicBCModel
+//    class WeakPBCModel
 //=========================================================
 
 class WeakPBCModel : public PeriodicBCModel
@@ -76,7 +76,7 @@ protected:
 
   FlexVector trNodes_[3]; // array of flexvectors of traction mesh nodes
 
-  Vector box_;    // specimen coordinates
+  Vector box_;    // vector of specimen coordinates
   Vector dx0_;    // smallest element size per dimension
   double factor_; // coarsening factor
 };

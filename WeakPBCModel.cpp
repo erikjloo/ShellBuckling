@@ -117,19 +117,19 @@ bool WeakPBCModel::takeAction(const String &action,
   if (action == Actions::GET_MATRIX0 || action == Actions::GET_INT_VECTOR)
   {
     Ref<MatrixBuilder> mbuilder;
-    Vector disp;
+    Vector solu;
     Vector fint;
 
     // Get the current displacements.
 
-    StateVector::get(disp, dofs_, globdat);
+    StateVector::get(solu, dofs_, globdat);
 
     // Get the matrix builder and the internal force vector.
 
     params.get(fint, ActionParams::INT_VECTOR);
     params.find(mbuilder, ActionParams::MATRIX0);
 
-    augmentMatrix_(mbuilder, fint, disp);
+    augmentMatrix_(mbuilder, fint, solu);
     return true;
   }
 
@@ -361,16 +361,21 @@ void WeakPBCModel::coarsenMesh_(FlexVector &trFace, const idx_t &index)
   double dx = (dx0_[0] + dx0_[1]) / (2 * factor_);
   // double dx = dx0_[index] / factor_;
 
+  double min_factor = 0;
+  for (idx_t ix = 0; ix < rank_; ++ix)
+    min_factor += dx0_[ix]/(rank_*dx_[ix]);
+  System::out() << "Minimum coarsening factor is " << min_factor << "\n";
+  
   // Loop over indices of trFace
   int jn = 0;
-  for (Iter in = trFace.begin(); in < trFace.end(); ++in)
+  for (Iter in = trFace.begin(); in < trFace.end()-1; ++in)
   {
     // Get nodal coordinates
     nodes_.getNodeCoords(c0, trFace[jn]);
     nodes_.getNodeCoords(c1, trFace[jn + 1]);
 
     // Delete indices until c1 - c0 > dx
-    while (norm2(c0 - c1) < dx)
+    while (norm2(c0 - c1) < min(dx, dx_[index])) // && jn < trFace.size())
     {
       // Delete current node index
       trFace.erase(in + 1);
@@ -381,10 +386,10 @@ void WeakPBCModel::coarsenMesh_(FlexVector &trFace, const idx_t &index)
     // Check distance to last node
     if (norm2(cn - c1) < dx)
     {
-      // Delete all nodes up to but not including the last one
+      // Delete all indices up to but not including the last one
       trFace.erase(in + 1, trFace.end() - 1);
       // Break for loop of indices of trFace
-      break;
+      return;
     }
     jn += 1;
   }
@@ -457,7 +462,7 @@ void WeakPBCModel::getTractionMeshNodes_(IdxVector &connect,
 
 void WeakPBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
                                            const Vector &fint,
-                                           const Vector &disp)
+                                           const Vector &solu)
 {
   // Variables related to both U mesh and T mesh:
   IdxVector connect(nnod_);    // node indices = [ node1 node2 ]
@@ -532,12 +537,14 @@ void WeakPBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
         }
 
         // Assemble U-mesh fe
-        tr = select(disp, jdofs);
+        tr = select(solu, jdofs);
+        // System::out() << jdofs << "\n";
+        // System::out() << tr << "\n";
         fe = matmul(Ke, tr);
         select(fint, idofs) += fe;
 
         // Assemble T-mesh fe
-        u = select(disp, idofs);
+        u = select(solu, idofs);
         fe = matmul(KeT, u);
         select(fint, jdofs) += fe;
       }
@@ -545,15 +552,13 @@ void WeakPBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
   }
 
   // Variables related to corner displacements
-  Matrix eps(rank_, rank_); // strain matrix
-  Vector u_corner(rank_);
-  Vector u_fixed(rank_);
   Matrix Ht(ndof_, rank_);
-  voigtUtilities::voigt2TensorStrain(eps, imposedStrain_);
+  Vector u_corner(rank_);
+  // Vector u_fixed(rank_);
 
   IdxVector kdofs(rank_);
   dofs_->getDofIndices(kdofs, ifixed_, dofTypes_);
-  u_fixed = disp[kdofs];
+  // u_fixed = solu[kdofs];
 
   // Loop over faces of trNodes_
   for (idx_t ix = 0; ix < rank_; ++ix)
@@ -562,7 +567,7 @@ void WeakPBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
     // Obtain u_corner
     IdxVector idofs(rank_);
     dofs_->getDofIndices(idofs, masters_[ix], dofTypes_);
-    u_corner = disp[idofs];
+    u_corner = solu[idofs];
 
     // Loop over indices of trFace
     for (idx_t jn = 0; jn < trNodes_[ix].size() - 1; ++jn)
@@ -595,7 +600,7 @@ void WeakPBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
           mbuilder->addBlock(jdofs, idofs, Ht);
 
           // Assemble U-mesh fe
-          tr = select(disp, jdofs);
+          tr = select(solu, jdofs);
           select(fint, idofs) += matmul(H, tr);
           select(fint, kdofs) -= matmul(H, tr);
 
