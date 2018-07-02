@@ -314,6 +314,7 @@ void WeakPBCModel::createTractionMesh_()
     for (idx_t in = 0; in < inodes.size(); ++in)
     {
       nodes_.getNodeCoords(coords, inodes[in]);
+      coords[ix] = box_[2 * ix + 1];
       trNodes_[ix][kn++] = nodes_.addNode(coords);
     }
 
@@ -321,7 +322,6 @@ void WeakPBCModel::createTractionMesh_()
     for (idx_t jn = 0; jn < jnodes.size(); ++jn)
     {
       nodes_.getNodeCoords(coords, jnodes[jn]);
-      coords[ix] = box_[2 * ix];
       trNodes_[ix][kn++] = nodes_.addNode(coords);
     }
 
@@ -524,9 +524,9 @@ void WeakPBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
 
         // Assemble Ke
         if (face == 0 || face == 2 || face == 4)
-          Ke = -w[ip] * matmul(N.transpose(), H);
-        else if (face == 1 || face == 3 || face == 5)
           Ke = +w[ip] * matmul(N.transpose(), H);
+        else if (face == 1 || face == 3 || face == 5)
+          Ke = -w[ip] * matmul(N.transpose(), H);
 
         // Add Ke and KeT to mbuilder
         KeT = Ke.transpose();
@@ -538,8 +538,6 @@ void WeakPBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
 
         // Assemble U-mesh fe
         tr = select(solu, jdofs);
-        // System::out() << jdofs << "\n";
-        // System::out() << tr << "\n";
         fe = matmul(Ke, tr);
         select(fint, idofs) += fe;
 
@@ -554,11 +552,8 @@ void WeakPBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
   // Variables related to corner displacements
   Matrix Ht(ndof_, rank_);
   Vector u_corner(rank_);
-  // Vector u_fixed(rank_);
-
   IdxVector kdofs(rank_);
   dofs_->getDofIndices(kdofs, ifixed_, dofTypes_);
-  // u_fixed = solu[kdofs];
 
   // Loop over faces of trNodes_
   for (idx_t ix = 0; ix < rank_; ++ix)
@@ -591,11 +586,6 @@ void WeakPBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
         // Add H  and Ht to mbuilder
         if (mbuilder != NIL)
         {
-          // mbuilder->addBlock(kdofs, jdofs, H);
-          // mbuilder->addBlock(jdofs, kdofs, Ht);
-
-          H = -H;
-          Ht = -Ht;
           mbuilder->addBlock(idofs, jdofs, H);
           mbuilder->addBlock(jdofs, idofs, Ht);
 
@@ -606,7 +596,6 @@ void WeakPBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
 
           // Assemble T-mesh fe
           select(fint, jdofs) += matmul(Ht, u_corner);
-          // select(fint, jdofs) -= matmul(Ht, u_fixed);
         }
       }
     }
