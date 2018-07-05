@@ -334,15 +334,13 @@ void WeakPBCModel::createTractionMesh_()
     // Coarsen the mesh (works only for 2D)
     coarsenMesh_(trNodes_[ix], index);
 
-    // Print to verify
-    System::out() << "trNodes_[" << ix << "] = " << trNodes_[ix] << "\n";
-  }
-
-  // Add dofs to traction mesh
-  for (idx_t ix = 0; ix < rank_; ++ix)
-  {
+    // Add dofs to trFace
     for (idx_t in = 0; in < trNodes_[ix].size(); ++in)
       dofs_->addDofs(trNodes_[ix][in], dofTypes_);
+
+    // Print to verify
+    System::out() << "trNodes_[" << ix << "] = " << trNodes_[ix] << "\n";
+
   }
 }
 
@@ -361,10 +359,10 @@ void WeakPBCModel::coarsenMesh_(FlexVector &trFace, const idx_t &index)
   double dx = (dx0_[0] + dx0_[1]) / (2 * factor_);
   // double dx = dx0_[index] / factor_;
 
-  double min_factor = 0;
-  for (idx_t ix = 0; ix < rank_; ++ix)
-    min_factor += dx0_[ix]/(rank_*dx_[ix]);
-  System::out() << "Minimum coarsening factor is " << min_factor << "\n";
+  // double min_factor = 0;
+  // for (idx_t ix = 0; ix < rank_; ++ix)
+  //   min_factor += dx0_[ix]/(rank_*dx_[ix]);
+  // System::out() << "Minimum coarsening factor is " << min_factor << "\n";
   
   // Loop over indices of trFace
   int jn = 0;
@@ -375,7 +373,7 @@ void WeakPBCModel::coarsenMesh_(FlexVector &trFace, const idx_t &index)
     nodes_.getNodeCoords(c1, trFace[jn + 1]);
 
     // Delete indices until c1 - c0 > dx
-    while (norm2(c0 - c1) < min(dx, dx_[index])) // && jn < trFace.size())
+    while (norm2(c0 - c1) < min(dx, dx_[index]) && jn < trFace.size())
     {
       // Delete current node index
       trFace.erase(in + 1);
@@ -400,8 +398,8 @@ void WeakPBCModel::coarsenMesh_(FlexVector &trFace, const idx_t &index)
 //-----------------------------------------------------------------------
 
 void WeakPBCModel::getTractionMeshNodes_(IdxVector &connect,
-                                                  const Vector &x,
-                                                  const idx_t &face)
+                                        const Vector &x,
+                                        const idx_t &face)
 {
   Matrix coords(rank_, nnod_);
 
@@ -517,7 +515,10 @@ void WeakPBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
         N(0, 2) = N(1, 3) = n(1, ip);
 
         // Get H-matrix from T-mesh
-        bshape_->getLocalPoint(xi, X[ip], 0.1, coords);
+        int ix = face / 2;
+        X(ix,ip) = box_[2*ix+1];
+        double eps = dx0_[ix]/100;
+        bshape_->getLocalPoint(xi, X[ip], eps, coords);
         bshape_->evalShapeFunctions(h, xi);
         H(0, 0) = H(1, 1) = h[0];
         H(0, 2) = H(1, 3) = h[1];
@@ -580,23 +581,23 @@ void WeakPBCModel::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
         // Assemble H matrix
         H(0, 0) = H(1, 1) = n(0, ip);
         H(0, 2) = H(1, 3) = n(1, ip);
-        H = w[ip] * H;
-        Ht = H.transpose();
+        H *= w[ip];
 
         // Add H  and Ht to mbuilder
+        Ht = H.transpose();
         if (mbuilder != NIL)
         {
           mbuilder->addBlock(idofs, jdofs, H);
           mbuilder->addBlock(jdofs, idofs, Ht);
-
-          // Assemble U-mesh fe
-          tr = select(solu, jdofs);
-          select(fint, idofs) += matmul(H, tr);
-          select(fint, kdofs) -= matmul(H, tr);
-
-          // Assemble T-mesh fe
-          select(fint, jdofs) += matmul(Ht, u_corner);
         }
+
+        // Assemble U-mesh fe
+        tr = select(solu, jdofs);
+        select(fint, idofs) += matmul(H, tr);
+        select(fint, kdofs) -= matmul(H, tr);
+
+        // Assemble T-mesh fe
+        select(fint, jdofs) += matmul(Ht, u_corner);
       }
     }
   }

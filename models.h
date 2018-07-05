@@ -19,7 +19,6 @@ void  declareOldPBCModel();
 void  declareOrtizModel();
 void  declareSolidModel();
 void  declarePeriodicBCModel();
-void  declareWeakPeriodicBCModel();
 void  declareWeakPBCModel();
 void  declareWeakerPBCModel();
 void  declareSolidModel();

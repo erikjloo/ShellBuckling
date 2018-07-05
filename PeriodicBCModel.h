@@ -104,9 +104,9 @@ class PeriodicBCModel : public Model
 
   protected:
 
-    idx_t rank_;
+    idx_t rank_; // number of dimensions
     BoolVector active_;
-    Assignable<NodeSet> nodes_;
+    Assignable<NodeSet> nodes_; // NodeSet for retrieving nodal coordinates
 
     Ref<XDofSpace> dofs_; // reference fo DofSpace object
     Ref<Constraints> cons_; // reference to Constraints object
@@ -114,8 +114,8 @@ class PeriodicBCModel : public Model
     IdxVector dofTypes_; // index vector for retrieving dof indices from dofs_
 
     IdxVector bndNodes_[6];   // array of index vectors of boundary nodes
-    Tuple<idx_t, 3> masters_; // master corner nodes
-    idx_t ifixed_; // master corner node 0
+    Tuple<idx_t, 3> masters_; // iindex vector of corner nodes (except corner 0)
+    idx_t ifixed_; // index corner node 0
 
     Vector imposedStrain_; // vector of applied strain
 
@@ -123,7 +123,7 @@ class PeriodicBCModel : public Model
     double stepSize_;
     double maxTime_;
 
-    Vector dx_; // specimen dimensions
+    Vector dx_; // vector of specimen dimensions
 
     String strainFile_;
     StrainType strainType_;

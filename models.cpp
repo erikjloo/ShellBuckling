@@ -20,7 +20,6 @@ void declareModels ()
   declareOrtizModel();
   declareSolidModel();
   declarePeriodicBCModel();
-  declareWeakPeriodicBCModel();
   declareWeakPBCModel();
   declareWeakerPBCModel();
   declareSolidModel();
