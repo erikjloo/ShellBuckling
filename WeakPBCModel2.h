@@ -4,6 +4,7 @@
  * conditions on the 2D unit cells. A different coarsening strategy is applied
  *
  * Erik Giesen Loo, April 2018
+ * Frans van der Meer, Jan 2020
  *
  */
 
@@ -16,16 +17,22 @@
 
 #include "PeriodicBCModel.h"
 
+#include <jem/io/PrintWriter.h>
 #include <jem/util/Flex.h>
 #include <jive/fem/XNodeSet.h>
+#include <jive/fem/XElementSet.h>
 #include <jive/algebra/MatrixBuilder.h>
 #include <jive/geom/BoundaryLine.h>
 
+using jem::io::PrintWriter;
 using jem::util::Flex;
 using jive::algebra::MatrixBuilder;
+using jive::fem::NodeGroup;
+using jive::fem::XElementSet;
 using jive::fem::XNodeSet;
 using jive::geom::BoundaryLine2;
 using jive::geom::BoundaryShape;
+using jive::geom::Shape;
 
 //=========================================================
 //    class WeakPBCModel2
@@ -34,19 +41,19 @@ using jive::geom::BoundaryShape;
 class WeakPBCModel2 : public PeriodicBCModel
 {
 public:
-    typedef WeakPBCModel2           Self;
-    typedef PeriodicBCModel         Super;
-    typedef Flex<idx_t>             FlexVector;
-    typedef Flex<idx_t>::Iterator   Iter;
-    static const char*              COARSEN_FACTOR;
-    static const char*              NUM_TNODE_PROP;
-    static const char*              ANGLE_PROP;
-    static const char*              MIN_DIST_PROP;
-    static const char*              USHAPE_PROP;
-    static const char*              TSHAPE_PROP;
-    static const char*              ISCHEME_PROP;
-    static const double             EPS;
-    static const double             PI;
+    typedef WeakPBCModel2 Self;
+    typedef PeriodicBCModel Super;
+    typedef Flex<idx_t> FlexVector;
+    typedef Flex<idx_t>::Iterator Iter;
+    static const char *COARSEN_FACTOR;
+    static const char *NUM_TNODE_PROP;
+    static const char *ANGLE_PROP;
+    static const char *MIN_DIST_PROP;
+    static const char *USHAPE_PROP;
+    static const char *TSHAPE_PROP;
+    static const char *ISCHEME_PROP;
+    static const double EPS;
+    static const double PI;
 
     WeakPBCModel2
 
@@ -71,26 +78,55 @@ protected:
     void findSmallestElement_();
     void clearTractionMesh_();
     void createTractionMesh_();
+    void createAlignedTractionMesh_();
+    // void updateboundary_(const Properties &globdat);
+    // void updateConnectivity_(const Properties &globdat);
+    // void madeEdgeMesh_(XElementSet &edgeElems, const NodeGroup &edgeGroup, const idx_t ix);
+    // void updateEdge_(const idx_t ix);
     void coarsenMesh_(FlexVector &trFace, const idx_t &index);
     void augmentMatrix_(Ref<MatrixBuilder> mbuilder, const Vector &fint, const Vector &disp);
     void getTractionMeshNodes_(IdxVector &connect, const Vector &x, const idx_t &face);
 
 protected:
     Assignable<XNodeSet> nodes_; // XNodeSet to create the traction mesh nodes
+    double angle_;               // alignment angle (clockwise)
+    double minDist_;             // minimum relative size of integration element
 
     Ref<BoundaryShape> bshape_; // BoundaryShape for calculating shape functions
 
-    int nIP_;       // number of int. points associated with bshape_
-    int nnod_;      // number of nodes associated with bshape_
-    int ndof_;      // numder of dofs associated with bshape_
-    int localrank_; // number of local dimensions of bshape_
+    IdxVector tracTypes_;   // dof type indices for tractions
+    // FlexVector trNodes_[3]; // array of flexvectors of traction mesh nodes
+    // Vector box_;            // vector of specimen coordinates
+    // idx_t numTNode_;        // number of traction nodes
+    // Ref<Shape> tshape_;     // for integration of tractions
+    // Ref<Shape> ushape_;     // for interpolation of displacements
+    // Ref<Shape> line2_;      // for integration
 
-    FlexVector trNodes_[3]; // array of flexvectors of traction mesh nodes
+    int ipCount_;           // number of int. points associated with bshape_
+    int tnodeCount_;        // number of nodes associated with bshape_
+    int tdofCount_;         // numder of dofs associated with bshape_
+    int localrank_;         // number of local dimensions of bshape_
 
-    idx_t numTNode_;       // number of traction nodes
-    Vector box_;           // vector of specimen coordinates
-    Vector dx0_;           // smallest element size per dimension
-    double cf_;            // coarsening factor
+    FlexVector trNodes_[3];          // array of flexvectors of traction mesh nodes
+    Assignable<XNodeSet> tnodes_;    // to create the traction mesh nodes
+    Assignable<XElementSet> telems_; // to create the traction mesh elements
+
+    // Tuple<Assignable<XElementSet>, 4> edgeElems_;
+    // IdxVector edgeCount_;
+    // idx_t unodeCount_; // number of nodes of ushape_
+    // idx_t inodeCount_; // number of nodes of intShape_
+    // idx_t udofCount_;  // numder of dofs for displacements
+    // idx_t irank_;      // dimenion of intShape_
+    // idx_t localRank_;  // local dimenion of ushape_
+    // Vector offset_;    // offset in coordinates due to alignment
+    // String ischemeString_;
+
+    idx_t numTNode_; // number of traction nodes
+    Vector box_;     // vector of specimen coordinates
+    Vector dx0_;     // smallest element size per dimension
+    double cf_;      // coarsening factor
+
+    Ref<PrintWriter> dbOut_;
 };
 
 #endif

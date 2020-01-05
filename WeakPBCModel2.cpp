@@ -75,13 +75,13 @@ WeakPBCModel2::WeakPBCModel2
     myProps.get(cf_, COARSEN_FACTOR);
     myConf.set(COARSEN_FACTOR, cf_);
     
-    // angle_ = 0;
-    // myProps.get(angle_, ANGLE_PROP, -45., 135.);
-    // myConf.set(ANGLE_PROP, angle_);
+    angle_ = 0;
+    myProps.get(angle_, ANGLE_PROP, -45., 135.);
+    myConf.set(ANGLE_PROP, angle_);
 
-    // minDist_ = 1.e-6;
-    // myProps.find(minDist_, MIN_DIST_PROP);
-    // myConf.set(MIN_DIST_PROP, minDist_);
+    minDist_ = 1.e-6;
+    myProps.find(minDist_, MIN_DIST_PROP);
+    myConf.set(MIN_DIST_PROP, minDist_);
 
     nodes_ = XNodeSet::find(globdat);
 }
@@ -224,9 +224,9 @@ void WeakPBCModel2::init_(const Properties &globdat)
     // Create boundary element
     String bscheme = "Gauss1";
     bshape_ = BoundaryLine2::getShape("line", bscheme);
-    nIP_ = bshape_->integrationPointCount();
-    nnod_ = bshape_->nodeCount();
-    ndof_ = nnod_ * rank_;
+    ipCount_ = bshape_->integrationPointCount();
+    tnodeCount_ = bshape_->nodeCount();
+    tdofCount_ = tnodeCount_ * rank_;
     localrank_ = bshape_->localRank();
 }
 
@@ -367,6 +367,47 @@ void WeakPBCModel2::createTractionMesh_()
 }
 
 //-----------------------------------------------------------------------
+//   createTractionMesh_
+//-----------------------------------------------------------------------
+
+void WeakPBCModel2::createTractionMesh_()
+{
+    Vector ncoords(rank_);         // coordinate vector
+    IdxVector inodes(tnodeCount_); // connectivity
+
+    JEM_PRECHECK(nodes_.size() > 2 * numTNode_);
+
+    for (idx_t ix = 0; ix < rank_; ++ix)
+    {
+        idx_t iy = (ix + 1) % 2;
+        idx_t ie0 = ix * (numTNode_ - 1);
+        double x0 = box_[2 * ix];
+        double y0 = box_[2 * iy];
+        ncoords[ix] = x0;
+
+        double dy = dx_[iy] / (numTNode_ - 1);
+
+        for (idx_t in = 0; in < numTNode_; ++in)
+        {
+            ncoords[iy] = y0 + in * dy;
+            tnodes_.addNode(ncoords);
+            *dbOut_ << "adding traction node " << ncoords << endl;
+        }
+        for (idx_t ie = 0; ie < numTNode_ - 1; ++ie)
+        {
+            inodes[0] = ie0 + ie + ix;
+            inodes[1] = ie0 + ie + ix + 1;
+
+            *dbOut_ << "adding traction element " << inodes << endl;
+            telems_.addElement(inodes);
+        }
+    }
+    IdxVector allnodes(iarray(2 * numTNode_));
+
+    dofs_->addDofs(allnodes, tracTypes_);
+}
+
+//-----------------------------------------------------------------------
 //   coarsenMesh_
 //-----------------------------------------------------------------------
 
@@ -424,7 +465,7 @@ void WeakPBCModel2::getTractionMeshNodes_(IdxVector &connect,
                                          const Vector &x,
                                          const idx_t &face)
 {
-    Matrix coords(rank_, nnod_);
+    Matrix coords(rank_, tnodeCount_);
 
     // Map face onto ix
     int ix = face / 2;
@@ -486,30 +527,30 @@ void WeakPBCModel2::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
                                   const Vector &solu)
 {
     // Variables related to both U mesh and T mesh:
-    IdxVector connect(nnod_);    // node indices = [ node1 node2 ]
-    Matrix coords(rank_, nnod_); // node coordinates = [ x[1] x[2] ], x = [x y z]'
+    IdxVector connect(tnodeCount_);    // node indices = [ node1 node2 ]
+    Matrix coords(rank_, tnodeCount_); // node coordinates = [ x[1] x[2] ], x = [x y z]'
 
     // Variables related to element on U mesh:
-    IdxVector idofs(ndof_); // dof indices related to U
-    Vector w(nIP_);         // Integration weights = [ jw[1] jw[2] ]
-    Matrix n(nnod_, nIP_);  // shape functions of U mesh: N = [ n[1] n[2] ], n[ip] = [n1 n2]'
-    Matrix N(rank_, ndof_); // N matrix of U mesh [n1 0 n2 0; 0 n1 0 n2]
-    Matrix X(rank_, nIP_);  // global coordinates of IP; X = [ x[1] x[2] ], x[ip] = [x y z]'
+    IdxVector idofs(tdofCount_); // dof indices related to U
+    Vector w(ipCount_);         // Integration weights = [ jw[1] jw[2] ]
+    Matrix n(tnodeCount_, ipCount_);  // shape functions of U mesh: N = [ n[1] n[2] ], n[ip] = [n1 n2]'
+    Matrix N(rank_, tdofCount_); // N matrix of U mesh [n1 0 n2 0; 0 n1 0 n2]
+    Matrix X(rank_, ipCount_);  // global coordinates of IP; X = [ x[1] x[2] ], x[ip] = [x y z]'
     N = 0.0;
 
     // Variables related to element on T mesh:
-    IdxVector jdofs(ndof_); // dof indices related to T
+    IdxVector jdofs(tdofCount_); // dof indices related to T
     Vector xi(localrank_);  // local coordinates of given X[ip]; u = xi
-    Vector h(nnod_);        // shape functions of T; h = [h1 h2]'
-    Matrix H(rank_, ndof_); // H matrix of T mesh [h1 0 h2 0; 0 h1 0 h2]
+    Vector h(tnodeCount_);        // shape functions of T; h = [h1 h2]'
+    Matrix H(rank_, tdofCount_); // H matrix of T mesh [h1 0 h2 0; 0 h1 0 h2]
     H = 0.0;
 
     // Matrices and vector to be assembled:
-    Vector tr(ndof_);         // Vector of tractions of each element
-    Vector u(ndof_);          // Vector of displacements of each element
-    Matrix Ke(ndof_, ndof_);  // Ke = w[ip]*N[ip]*H[ip]
-    Matrix KeT(ndof_, ndof_); // KeT = w[ip]*H[ip]*N[ip]
-    Vector fe(ndof_);         // fe = Ke*t or KeT*u
+    Vector tr(tdofCount_);         // Vector of tractions of each element
+    Vector u(tdofCount_);          // Vector of displacements of each element
+    Matrix Ke(tdofCount_, tdofCount_);  // Ke = w[ip]*N[ip]*H[ip]
+    Matrix KeT(tdofCount_, tdofCount_); // KeT = w[ip]*H[ip]*N[ip]
+    Vector fe(tdofCount_);         // fe = Ke*t or KeT*u
 
     // Loop over faces of bndNodes_
     for (idx_t face = 0; face < 2 * rank_; ++face)
@@ -526,7 +567,7 @@ void WeakPBCModel2::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
             bshape_->getGlobalIntegrationPoints(X, coords);
             n = bshape_->getShapeFunctions();
 
-            for (idx_t ip = 0; ip < nIP_; ip++)
+            for (idx_t ip = 0; ip < ipCount_; ip++)
             {
                 // Get jdofs from T-mesh
                 getTractionMeshNodes_(connect, X[ip], face);
@@ -572,7 +613,7 @@ void WeakPBCModel2::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
     }
 
     // Variables related to corner displacements
-    Matrix Ht(ndof_, rank_);
+    Matrix Ht(tdofCount_, rank_);
     Vector u_corner(rank_);
     Vector u_fixed(rank_);
     IdxVector kdofs(rank_);
@@ -598,7 +639,7 @@ void WeakPBCModel2::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
             dofs_->getDofIndices(jdofs, connect, dofTypes_);
             n = bshape_->getShapeFunctions();
 
-            for (idx_t ip = 0; ip < nIP_; ip++)
+            for (idx_t ip = 0; ip < ipCount_; ip++)
             {
                 // Assemble H matrix
                 H(0, 0) = H(1, 1) = n(0, ip);
@@ -659,5 +700,5 @@ void declareWeakPBCModel2()
 
 {
     using jive::model::ModelFactory;
-    ModelFactory::declare("WeakPBC", &newWeakPBCModel2);
+    ModelFactory::declare("WeakPBC2", &newWeakPBCModel2);
 }
