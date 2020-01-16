@@ -7,8 +7,8 @@
  *
  */
 
-#ifndef LAG_PERIODICBC_MODEL_H
-#define LAG_PERIODICBC_MODEL_H
+#ifndef WEAKPBC_MODEL_H
+#define WEAKPBC_MODEL_H
 
 //-----------------------------------------------------------------------
 //   class WeakPBCModel
@@ -78,7 +78,7 @@ protected:
 
   Vector box_;    // vector of specimen coordinates
   Vector dx0_;    // smallest element size per dimension
-  double factor_; // coarsening factor
+  double cf_; // coarsening factor
 };
 
 #endif

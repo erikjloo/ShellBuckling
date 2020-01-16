@@ -163,6 +163,7 @@ void WeakPBCModel2::init_(const Properties &globdat)
 	cons_ = Constraints::get(dofs_, globdat);
 
 	dofTypes_.resize(rank_);
+  tdofTypes_.resize(rank_);
 	box_.resize(rank_ * 2);
 	dx0_.resize(rank_);
 	dx_.resize(rank_);
@@ -177,7 +178,7 @@ void WeakPBCModel2::init_(const Properties &globdat)
   tdofTypes_[0] = dofs_->addType("tx");
   tdofTypes_[1] = dofs_->addType("ty");
   if (rank_ > 2)
-    dofTypes_[2] = dofs_->addType("tz");
+    tdofTypes_[2] = dofs_->addType("tz");
 
 	// Get boundary nodes
 	for (idx_t face = 0; face < 2 * rank_; ++face)
@@ -219,7 +220,7 @@ void WeakPBCModel2::init_(const Properties &globdat)
 	// Create traction mesh
 	System::out() << " tnodeIndices_ = [xmin, ymin] = \n";
 	findSmallestElement_();
-  createTractionMesh2_();
+  createTractionMesh_();
   // clearTractionMesh_();
 }
 
@@ -331,23 +332,23 @@ void WeakPBCModel2::createTractionMesh_()
     }
 
 		// Get correct index
-		idx_t index = (ix + 1) % 2;
+		idx_t iy = (ix + 1) % 2;
 
 		// Sorting trFace (works only for 2D)
-		sortTrFace_(tnodeIndices_[ix], index);
+		sortTrFace_(tnodeIndices_[ix], iy);
 
 		// Coarsen the mesh (works only for 2D)
-		coarsenMesh_(tnodeIndices_[ix], index);
+		coarsenMesh_(tnodeIndices_[ix], iy);
 
 		// Add dofs to trFace
-		// for (idx_t in = 0; in < tnodeIndices_[ix].size(); ++in)
-		// 	dofs_->addDofs(tnodeIndices_[ix][in], tdofTypes_);
+		for (idx_t in = 0; in < tnodeIndices_[ix].size(); ++in)
+			dofs_->addDofs(tnodeIndices_[ix][in], tdofTypes_);
 
 		// Print to verify
 		System::out() << "tnodeIndices_[" << ix << "] = " << tnodeIndices_[ix] << "\n";
 	}
-  IdxVector allnodes(iarray(2 * numTNode_));
-  dofs_->addDofs(allnodes, tdofTypes_);
+  // IdxVector allnodes(iarray(2 * numTNode_));
+  // dofs_->addDofs(allnodes, tdofTypes_);
 }
 
 //-----------------------------------------------------------------------
@@ -390,14 +391,14 @@ void WeakPBCModel2::createTractionMesh2_()
 		}
 
     // Add dofs to trFace
-    // for (idx_t in = 0; in < tnodeIndices_[ix].size(); ++in)
-    //   dofs_->addDofs(tnodeIndices_[ix][in], tdofTypes_);
+    for (idx_t in = 0; in < tnodeIndices_[ix].size(); ++in)
+      dofs_->addDofs(tnodeIndices_[ix][in], tdofTypes_);
 
     // Print to verify
     System::out() << "tnodeIndices_[" << ix << "] = " << tnodeIndices_[ix] << "\n";
   }
-	IdxVector allnodes(iarray(2 * numTNode_));
-	dofs_->addDofs(allnodes, tdofTypes_);
+	// IdxVector allnodes(iarray(2 * numTNode_));
+	// dofs_->addDofs(allnodes, tdofTypes_);
 }
 
 //-----------------------------------------------------------------------
@@ -599,8 +600,8 @@ void WeakPBCModel2::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
 	// Matrices and vector to be assembled:
 	Vector tr(tdofCount_);         // Vector of tractions of each element
 	Vector u(udofCount_);          // Vector of displacements of each element
-	Matrix Ke(tdofCount_, tdofCount_);  // Ke = w[ip]*N[ip]*H[ip]
-	Matrix KeT(tdofCount_, tdofCount_); // KeT = w[ip]*H[ip]*N[ip]
+	Matrix Ke(udofCount_, tdofCount_);  // Ke = w[ip]*N[ip]*H[ip]
+	Matrix KeT( Ke.transpose() ); // KeT = w[ip]*H[ip]*N[ip]
 	Vector fe(tdofCount_);         // fe = Ke*t or KeT*u
 
 	// Loop over faces of bndNodes_
@@ -614,15 +615,15 @@ void WeakPBCModel2::augmentMatrix_(Ref<MatrixBuilder> mbuilder,
 			connect[1] = bndNodes_[face][in + 1];
 			nodes_.getSomeCoords(coords, connect);
 			bshape_->getIntegrationWeights(w, coords);
-			dofs_->getDofIndices(idofs, connect, dofTypes_);
 			bshape_->getGlobalIntegrationPoints(X, coords);
+			dofs_->getDofIndices(idofs, connect, dofTypes_);
 			n = bshape_->getShapeFunctions();
 
 			for (idx_t ip = 0; ip < ipCount_; ip++)
 			{
 				// Get jdofs from T-mesh
 				getTractionMeshNodes_(connect, X[ip], face);
-				dofs_->getDofIndices(jdofs, connect, dofTypes_);
+				dofs_->getDofIndices(jdofs, connect, tdofTypes_);
 				tnodes_.getSomeCoords(coords, connect);
 
 				// Get N-matrix from U-mesh
