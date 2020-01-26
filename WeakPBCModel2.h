@@ -47,8 +47,6 @@ public:
     typedef Flex<idx_t>::Iterator Iter;
     static const char *COARSEN_FACTOR;
     static const char *NUM_TNODE_PROP;
-    static const char *ANGLE_PROP;
-    static const char *MIN_DIST_PROP;
     static const double EPS;
     static const double PI;
 
