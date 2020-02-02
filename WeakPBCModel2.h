@@ -47,6 +47,9 @@ public:
     typedef Flex<idx_t>::Iterator Iter;
     static const char *COARSEN_FACTOR;
     static const char *NUM_TNODE_PROP;
+    static const char *USE_TNODE_PROP;
+    static const char *ANGLE_PROP;
+    static const char *MIN_DIST_PROP;
     static const double EPS;
     static const double PI;
 
@@ -85,6 +88,7 @@ protected:
 
 protected:
 
+    bool useTnodes_;  // bool to use tnodes or nodes
     idx_t numTNode_; // number of traction nodes
     double minDist_; // minimum relative size of integration element
     double angle_;   // alignment angle (clockwise)
